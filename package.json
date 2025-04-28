@@ -1,0 +1,126 @@
+{
+  "twofahelper": {
+    "name": "两步验证助手",
+    "description": "懒人板2FA，配合浏览器扩展使用，支持自动弹出验证码一键复制",
+    "labels": "TOTP,验证码,扩展",
+    "version": "1.2.7",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/2fa.png",
+    "author": "madrays",
+    "level": 1,
+    "v2": true,
+    "history": {
+      "v1.2.7": "满屏面板"
+    }
+  },
+  "fnossign": {
+    "name": "飞牛论坛签到",
+    "description": "自动完成飞牛论坛每日签到，支持失败重试和历史记录",
+    "labels": "签到",
+    "version": "2.5.4",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/fnos.ico",
+    "author": "madrays",
+    "level": 2,
+    "v2": true,
+    "history": {
+      "v2.5.4": "尝试解决0点签到卡住（尽量还是别设置0点签到，暂时无法验证是否解决）",
+      "v2.5.3": "增强重试机制，解决定时任务卡住问题，超出重试次数后自动安排延迟重试",
+      "v2.5.2": "修复手动签到时会产生重复记录的问题",
+      "v2.5.1": "修复签到成功后，未能正确获取签到状态的bug。"
+    }
+  },
+  "lemonshengyou": {
+    "name": "柠檬站点神游",
+    "description": "自动完成柠檬站点每日免费神游三清天，获取奖励",
+    "labels": "神游,站点,柠檬",
+    "version": "1.0.5",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/lemon.ico",
+    "author": "madrays",
+    "level": 2,
+    "v2": true,
+    "history": {
+      "v1.0.5": "修复神游成功后，未能正确获取神游状态的bug。"
+    }
+  },
+  "nexusinvitee": {
+    "name": "后宫管理系统",
+    "description": "管理添加到MP站点的邀请系统，包括邀请名额、已邀请用户状态等",
+    "labels": "PT,后宫,邀请",
+    "version": "1.2.6",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/nexusinvitee.png",
+    "author": "madrays",
+    "level": 2,
+    "v2": true,
+    "history": {
+      "v1.2.6": "尝试修复hh后宫",
+      "v1.2.5": "适配麒麟",
+      "v1.2.4": "修复通用翻页逻辑",
+      "v1.2.3": "修复蝶粉翻页逻辑",
+      "v1.2.2": "新增失败站点通知功能，by@JhouXerox；修复插件无法正确更新的问题；修复各项bug；尝试修复无限翻页问题，修复1.2.1"
+    }
+  },
+  "nodeseeksign": {
+    "name": "NodeSeek论坛签到",
+    "description": "懒羊羊定制：自动完成NodeSeek论坛每日签到，支持随机奖励和自动加鸡腿功能",
+    "labels": "签到,NodeSeek,论坛",
+    "version": "1.0.0",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/nodeseeksign.png",
+    "author": "madrays",
+    "level": 2,
+    "v2": true,
+    "history": {
+      "v1.0.0": "支持API方式签到，绕过CloudFlare防护，支持随机奖励和自动加鸡腿"
+    }
+  },
+  "FengchaoSignin": {
+    "name": "蜂巢论坛签到",
+    "description": "自动完成蜂巢论坛每日签到，支持历史记录",
+    "labels": "签到,蜂巢,论坛",
+    "version": "1.0.8",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/fengchao.png",
+    "author": "madrays",
+    "level": 2,
+    "v2": true,
+    "history": {
+      "v1.0.8": "解除最多50个站点的限制"
+    }
+  },
+  "FengchaoInvite": {
+    "name": "蜂巢论坛邀请监控",
+    "description": "蜂巢论坛管理组定制专用",
+    "labels": "邀请,蜂巢,论坛",
+    "version": "1.1.4",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/fengchao.png",
+    "author": "madrays",
+    "level": 2,
+    "v2": true,
+    "history": {
+      "v1.1.4": "补充未定义变量"
+    }
+  },
+  "smarthardlink": {
+    "name": "智能硬链接",
+    "description": "通过计算文件SHA1，将指定目录中相同SHA1的文件只保留一个，其他的用硬链接替换，用来清理重复占用的磁盘空间",
+    "labels": "硬链接,SHA1,磁盘空间,重复文件",
+    "version": "1.0.5",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/hardlink.png",
+    "author": "madrays",
+    "level": 2,
+    "v2": true,
+    "history": {
+      "v1.0.5": "首次发布，支持SHA1重复文件识别，硬链接替换，保持种子文件名"
+    }
+  },
+  "logsclean": {
+    "name": "插件日志清理重制版",
+    "description": "定时清理插件产生的日志",
+    "labels": "日志,清理,工具",
+    "version": "1.0",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/clean.png",
+    "author": "madrays",
+    "level": 1,
+    "v2": true,
+    "history": {
+      "v1.0": "首次发布重制版，修复插件列表错误，增加页面和通知"
+    }
+  }
+} 
