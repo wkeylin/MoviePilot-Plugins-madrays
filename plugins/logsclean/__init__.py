@@ -33,7 +33,7 @@ class LogsCleanConfig(BaseModel):
 # --- Plugin Class ---
 class LogsClean(_PluginBase):
     # 插件名称
-    plugin_name = "插件日志清理重制版"
+    plugin_name = "插件日志清理联邦版"
     # 插件描述
     plugin_desc = "定时清理插件产生的日志"
     # 插件图标
