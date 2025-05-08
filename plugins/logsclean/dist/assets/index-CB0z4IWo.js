@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import PageComponent from './__federation_expose_Page-DVQGhGa6.js';
+import PageComponent from './__federation_expose_Page-zBiinCQa.js';
 import ConfigComponent from './__federation_expose_Config-DEahhRyd.js';
 import DashboardComponent from './__federation_expose_Dashboard-iJL_Safg.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';

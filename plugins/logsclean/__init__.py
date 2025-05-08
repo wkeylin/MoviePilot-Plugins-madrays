@@ -571,11 +571,23 @@ class LogsClean(_PluginBase):
             if not log_dir.exists():
                 return {"status": "error", "message": f"插件日志目录不存在: {log_dir}"}
             
-            # 构建日志文件路径
-            log_path = log_dir / f"{log_id}.log"
+            # 判断提供的log_id格式
+            if ".log." in log_id:
+                # 分割日志文件格式：xxx.log.1, xxx.log.2 - 直接使用全路径
+                log_path = log_dir / log_id
+                logger.info(f"{self.plugin_name}: 检测到分割日志文件格式: {log_id}")
+            elif log_id.endswith(".log"):
+                # 已经包含.log扩展名的格式
+                log_path = log_dir / log_id
+                logger.info(f"{self.plugin_name}: 检测到完整日志文件格式: {log_id}")
+            else:
+                # 标准格式：仅插件ID，需要添加.log扩展名
+                log_path = log_dir / f"{log_id}.log"
+                logger.info(f"{self.plugin_name}: 处理标准日志ID: {log_id} -> {log_path}")
             
             # 检查文件是否存在
             if not log_path.exists():
+                logger.error(f"{self.plugin_name}: 日志文件不存在: {log_path}")
                 return {"status": "error", "message": f"日志文件不存在: {log_path}"}
             
             # 删除文件
@@ -584,7 +596,7 @@ class LogsClean(_PluginBase):
             
             return {
                 "status": "success", 
-                "message": f"已成功删除日志文件: {log_id}.log"
+                "message": f"已成功删除日志文件: {log_path.name}"
             }
         except Exception as e:
             logger.error(f"{self.plugin_name}: 删除日志文件失败: {e}", exc_info=True)

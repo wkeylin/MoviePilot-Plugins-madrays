@@ -508,9 +508,21 @@ const showDeleteConfirmDialog = ref(false);
 
 // 显示删除确认对话框
 function deleteLogFile(pluginId, pluginName) {
-  deletingLogFile.value = pluginId;
+  const plugin = pluginLogsSizes.value.find(p => p.id === pluginId);
+  if (!plugin) {
+    error.value = "找不到要删除的插件日志信息";
+    setTimeout(() => { error.value = null; }, 3000);
+    return;
+  }
+  
+  // 保存完整的文件名信息
+  const logFileName = plugin.file_name || `${pluginId}.log`;
+  
+  deletingLogFile.value = logFileName;  // 存储完整文件名
   deletingLogName.value = pluginName || pluginId;
   showDeleteConfirmDialog.value = true;
+  
+  console.log(`准备删除日志文件: ${logFileName}, 显示名称: ${deletingLogName.value}`);
 }
 
 // 确认删除日志文件
@@ -521,6 +533,8 @@ async function confirmDeleteLogFile() {
     if (!deletingLogFile.value) {
       throw new Error('未指定要删除的日志文件');
     }
+    
+    console.log(`发送删除请求: ${deletingLogFile.value}`);
     
     const data = await props.api.post(`plugin/${pluginId}/delete_log`, { 
       log_id: deletingLogFile.value 
@@ -1558,6 +1572,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const PageComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-d2418c65"]]);
+const PageComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-372c9a2a"]]);
 
 export { PageComponent as default };
