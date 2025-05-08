@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta
+import os
+from pydantic import BaseModel
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -18,15 +20,26 @@ from app.schemas.types import SystemConfigKey
 from app.schemas import NotificationType
 
 
+# --- Add Pydantic model for config ---
+class LogsCleanConfig(BaseModel):
+    enable: bool = False
+    notify: bool = False
+    cron: str = '30 3 * * *'
+    rows: int = 300
+    selected_ids: List[str] = []
+    onlyonce: bool = False
+
+
+# --- Plugin Class ---
 class LogsClean(_PluginBase):
     # 插件名称
-    plugin_name = "插件日志清理重制版"
+    plugin_name = "插件日志清理联邦版"
     # 插件描述
     plugin_desc = "定时清理插件产生的日志"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/clean.png"
     # 插件版本
-    plugin_version = "1.0"
+    plugin_version = "1.1"
     # 插件作者
     plugin_author = "madrays"
     # 作者主页
@@ -39,109 +52,155 @@ class LogsClean(_PluginBase):
     auth_level = 1
 
     _enable = False
-    _onlyonce = False
     _cron = '30 3 * * *'
     _selected_ids: List[str] = []
     _rows = 300
     _notify = False
+    _onlyonce = False
 
-    # 定时器
     _scheduler: Optional[BackgroundScheduler] = None
+    _plugin_dir: Path = Path(__file__).parent
 
     def init_plugin(self, config: dict = None):
-        # 停止现有任务
         self.stop_service()
 
         if config:
             self._enable = config.get('enable', False)
             self._selected_ids = config.get('selected_ids', [])
             self._rows = int(config.get('rows', 300))
-            self._onlyonce = config.get('onlyonce', False)
             self._cron = config.get('cron', '30 3 * * *')
             self._notify = config.get('notify', False)
-
+            self._onlyonce = config.get('onlyonce', False)
+            
         # 定时服务
         self._scheduler = BackgroundScheduler(timezone=settings.TZ)
-
-        if self._onlyonce:
-            self._onlyonce = False
-            self.update_config({
-                "onlyonce": self._onlyonce,
-                "rows": self._rows,
-                "enable": self._enable,
-                "selected_ids": self._selected_ids,
-                "cron": self._cron,
-                "notify": self._notify
-            })
-            self._scheduler.add_job(func=self._task, trigger='date',
-                                    run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=2),
-                                    name="插件日志清理重制版")
+        
+        # 正常启动定时任务
         if self._enable and self._cron:
             try:
                 self._scheduler.add_job(func=self._task,
                                         trigger=CronTrigger.from_crontab(self._cron),
-                                        name="插件日志清理重制版")
+                                        name=self.plugin_name)
+                logger.info(f"{self.plugin_name}: 已按 CRON '{self._cron}' 计划定时任务。")
             except Exception as err:
-                logger.error(f"插件日志清理, 定时任务配置错误：{str(err)}")
-
+                logger.error(f"{self.plugin_name}: 定时任务配置错误: {err}")
+        
         # 启动任务
         if self._scheduler.get_jobs():
             self._scheduler.print_jobs()
             self._scheduler.start()
+        else:
+            # Log if no jobs are scheduled
+            logger.info(f"{self.plugin_name}: 没有计划任务需要启动。启动时配置: Enable={config.get('enable', False) if config else 'N/A'}, Cron='{self._cron}'")
 
-    def _task(self):
-        logger.info("开始执行插件日志清理任务...")
-        
-        # 获取要清理的插件列表
-        clean_plugin_ids = self._selected_ids[:]
-        if not clean_plugin_ids:
-            # 如果未选择，则获取所有已安装插件的ID
+    def _task(self, manual_run: bool = False, specific_plugin_id: str = None):
+        log_prefix = f"{self.plugin_name}{' (手动)' if manual_run else ''}"
+        logger.info(f"{log_prefix}: 开始执行清理任务...")
+
+        # 如果指定了具体插件，则只清理该插件
+        if specific_plugin_id:
+            clean_plugin_ids = [specific_plugin_id]
+            logger.info(f"{log_prefix}: 将只清理 {specific_plugin_id} 的日志")
+        # 否则，使用配置中的插件列表或所有已安装插件
+        elif self._selected_ids:
+            clean_plugin_ids = self._selected_ids[:]
+            logger.info(f"{log_prefix}: 将按配置清理 {len(clean_plugin_ids)} 个插件的日志")
+        else:
+            clean_plugin_ids = []
             try:
+                # 获取所有已安装插件
                 plugin_manager = PluginManager()
                 local_plugin_instances = plugin_manager.get_local_plugins() or []
+                
+                # 明确标记日志
+                logger.info(f"{log_prefix}: 开始获取已安装插件列表...")
+                
+                # 过滤出已安装的插件
                 installed_plugins = [p for p in local_plugin_instances if getattr(p, 'installed', False)]
-                clean_plugin_ids = [getattr(p, 'id', None) for p in installed_plugins if getattr(p, 'id', None)]
-                logger.info(f"未指定插件，将清理所有 {len(clean_plugin_ids)} 个已安装插件的日志")
+                
+                # 获取插件ID并转为小写存储
+                clean_plugin_ids = [getattr(p, 'id', '').lower() for p in installed_plugins if getattr(p, 'id', None)]
+                # 去除空项
+                clean_plugin_ids = [pid for pid in clean_plugin_ids if pid]
+                
+                logger.info(f"{log_prefix}: 未指定插件，将尝试清理所有 {len(clean_plugin_ids)} 个已安装插件的日志: {', '.join(clean_plugin_ids)}")
             except Exception as e:
-                logger.error(f"获取已安装插件列表失败: {e}")
-                return # 获取列表失败则不执行
+                logger.error(f"{log_prefix}: 获取已安装插件列表失败: {e}")
+                return {"status": "error", "message": f"获取已安装插件列表失败: {e}"}
 
-        # 记录本次运行结果
         run_results = []
         total_cleaned_lines_this_run = 0
         processed_files = 0
 
+        # 确保日志目录存在
+        log_dir = settings.LOG_PATH / Path("plugins")
+        if not log_dir.exists():
+            logger.warning(f"{log_prefix}: 插件日志目录不存在: {log_dir}，尝试创建")
+            try:
+                log_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                logger.error(f"{log_prefix}: 创建插件日志目录失败: {e}")
+                return {"status": "error", "message": f"创建插件日志目录失败: {e}"}
+
+        # 记录将要处理的插件数量
+        logger.info(f"{log_prefix}: 将处理 {len(clean_plugin_ids)} 个插件日志")
+
+        # 检查是否需要获取所有日志文件
+        get_all_logs = not clean_plugin_ids or specific_plugin_id is None
+        
+        # 如果是"清理全部"操作，则处理所有日志文件，包括特殊日志（如plugin.log）
+        if get_all_logs and manual_run:
+            try:
+                # 获取插件日志目录下的所有日志文件
+                all_log_files = list(log_dir.glob("*.log"))
+                special_log_names = []
+                
+                # 检查是否有不在clean_plugin_ids中的日志文件
+                for log_file in all_log_files:
+                    log_name = log_file.stem.lower()
+                    if log_name not in clean_plugin_ids:
+                        special_log_names.append(log_name)
+                
+                if special_log_names:
+                    logger.info(f"{log_prefix}: 发现特殊日志文件: {', '.join(special_log_names)}，将添加到清理列表")
+                    clean_plugin_ids.extend(special_log_names)
+            except Exception as e:
+                logger.error(f"{log_prefix}: 获取所有日志文件失败: {e}")
+
         for plugin_id in clean_plugin_ids:
-            log_path = settings.LOG_PATH / Path("plugins") / f"{plugin_id.lower()}.log"
+            if not plugin_id:
+                logger.warning(f"{log_prefix}: 发现一个空的插件ID，跳过。")
+                continue
+
+            # 确保plugin_id是小写
+            plugin_id = plugin_id.lower()
+            log_path = log_dir / f"{plugin_id}.log"
+            
             if not log_path.exists():
-                logger.debug(f"{plugin_id} 日志文件不存在，跳过")
+                logger.debug(f"{log_prefix}: {plugin_id} 日志文件不存在: {log_path}，跳过")
                 continue
 
             try:
-                # --- 修复解码错误：添加 errors='ignore' ---
                 with open(log_path, 'r', encoding='utf-8', errors='ignore') as file:
                     lines = file.readlines()
-                # --- 修复结束 ---
-                
+
                 original_lines = len(lines)
-                rows_to_keep = int(self._rows) # 确保是整数
+                rows_to_keep = int(self._rows)
+                if rows_to_keep < 0: rows_to_keep = 0
 
-                if rows_to_keep < 0: # 处理负数或无效输入
-                    rows_to_keep = 0 
-
-                if rows_to_keep == 0:
-                    top_lines = []
-                else:
+                kept_lines = 0
+                if rows_to_keep > 0:
                     top_lines = lines[-min(rows_to_keep, original_lines):]
-                
-                kept_lines = len(top_lines)
+                    kept_lines = len(top_lines)
+                else:
+                    top_lines = []
+                    
                 cleaned_lines = original_lines - kept_lines
 
-                # 只有当实际清理了行数时才写入文件并记录
                 if cleaned_lines > 0:
                     with open(log_path, 'w', encoding='utf-8') as file:
                         file.writelines(top_lines)
-                    logger.info(f"已清理 {plugin_id}: 保留 {kept_lines}/{original_lines} 行，清理 {cleaned_lines} 行")
+                    logger.info(f"{log_prefix}: 已清理 {plugin_id}: 保留 {kept_lines}/{original_lines} 行，清理 {cleaned_lines} 行")
                     total_cleaned_lines_this_run += cleaned_lines
                     run_results.append({
                         'plugin_id': plugin_id,
@@ -151,15 +210,13 @@ class LogsClean(_PluginBase):
                     })
                     processed_files += 1
                 else:
-                    logger.debug(f"{plugin_id} 日志行数 ({original_lines}) 未超过保留行数 ({rows_to_keep})，无需清理")
+                    logger.debug(f"{log_prefix}: {plugin_id} 日志行数 ({original_lines}) 未超过保留行数 ({rows_to_keep})，无需清理")
             except Exception as e:
-                 logger.error(f"处理 {plugin_id} 日志文件 {log_path} 时出错: {e}", exc_info=True)
+                logger.error(f"{log_prefix}: 处理 {plugin_id} 日志文件 {log_path} 时出错: {e}", exc_info=True)
 
-        # 保存本次运行的详细结果
         self.save_data('last_run_results', run_results)
-        logger.info(f"本次任务共处理 {processed_files} 个插件日志，清理 {total_cleaned_lines_this_run} 行")
+        logger.info(f"{log_prefix}: 本次任务共处理 {processed_files} 个插件日志，清理 {total_cleaned_lines_this_run} 行")
 
-        # 更新清理历史记录
         if total_cleaned_lines_this_run > 0 or processed_files > 0:
             try:
                 history = self.get_data('cleaning_history') or []
@@ -168,21 +225,18 @@ class LogsClean(_PluginBase):
                     'total_plugins_processed': processed_files,
                     'total_lines_cleaned': total_cleaned_lines_this_run,
                 })
-                # --- 修改历史记录限制 --- 
-                max_history = 10 # 保留最近10次
+                max_history = 10
                 history = history[:max_history]
                 self.save_data('cleaning_history', history)
-                logger.info(f"清理历史记录已更新，当前共 {len(history)} 条记录")
+                logger.info(f"{log_prefix}: 清理历史记录已更新，当前共 {len(history)} 条记录")
             except Exception as e:
-                logger.error(f"更新清理历史记录失败: {e}", exc_info=True)
+                logger.error(f"{log_prefix}: 更新清理历史记录失败: {e}", exc_info=True)
 
-        # --- 再次修改通知逻辑 ---
         if self._notify and (total_cleaned_lines_this_run > 0 or processed_files > 0):
             try:
                 title = "✅ 插件日志清理完成"
-                # 使用标准换行符 \n 并添加 Emoji
                 text = (
-                    f"🧹 清理任务已完成！\n"
+                    f"🧹 清理任务已完成！{' (手动触发)' if manual_run else ''}\n"
                     f"--------------------\n"
                     f"⏱️ 时间: {datetime.now(tz=pytz.timezone(settings.TZ)).strftime('%Y-%m-%d %H:%M:%S')}\n"
                     f"📁 处理插件: {processed_files} 个\n"
@@ -194,236 +248,425 @@ class LogsClean(_PluginBase):
                     title=title,
                     text=text
                 )
-                logger.info("已发送清理完成通知")
+                logger.info(f"{log_prefix}: 已发送清理完成通知")
             except Exception as e:
-                logger.error(f"发送清理通知失败: {e}", exc_info=True)
-        # --- 通知逻辑结束 ---
+                logger.error(f"{log_prefix}: 发送清理通知失败: {e}", exc_info=True)
 
-        logger.info("插件日志清理任务执行完毕")
+        logger.info(f"{log_prefix}: 清理任务执行完毕")
+        return {"status": "completed", "processed_files": processed_files, "cleaned_lines": total_cleaned_lines_this_run}
 
-    def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        plugin_options = self.get_local_plugins()
-
-        return [
-            # 卡片1：基本设置 (启用、通知、立即运行)
-            {
-                'component': 'VCard',
-                'props': {'class': 'mb-4', 'variant': 'outlined'},
-                'content': [
-                    {'component': 'VCardTitle', 'props': {'class':'text-h6 d-flex align-center'}, 'content': [
-                         {'component': 'VIcon', 'props': {'icon': 'mdi-cog-outline', 'start': True, 'color':'primary', 'size': 'large'}},
-                         {'component': 'span', 'text': '基本设置'}
-                    ]},
-                    {'component': 'VCardText', 'content': [
-                        {
-                            'component': 'VRow',
-                            'content': [
-                                {
-                                    'component': 'VCol', 'props': {'cols': 12, 'sm': 4},
-                                    'content': [{'component': 'VSwitch', 'props': {'model': 'enable', 'label': '启用插件', 'color':'primary'}}]
-                                },
-                                {
-                                    'component': 'VCol', 'props': {'cols': 12, 'sm': 4},
-                                    'content': [{'component': 'VSwitch', 'props': {'model': 'notify', 'label': '开启通知', 'color':'primary'}}]
-                                },
-                                {
-                                    'component': 'VCol', 'props': {'cols': 12, 'sm': 4},
-                                    'content': [{'component': 'VSwitch', 'props': {'model': 'onlyonce', 'label': '立即运行一次', 'color':'primary'}}]
-                                }
-                            ]
-                        }
-                    ]}
-                ]
-            },
-            # 卡片2：清理规则 (周期、保留行数、选择插件)
-            {
-                'component': 'VCard',
-                'props': {'class': 'mb-4', 'variant': 'outlined'},
-                'content': [
-                     {'component': 'VCardTitle', 'props': {'class':'text-h6 d-flex align-center mb-2'}, 'content': [
-                         {'component': 'VIcon', 'props': {'icon': 'mdi-filter-cog-outline', 'start': True, 'color':'warning', 'size': 'large'}},
-                         {'component': 'span', 'text': '清理规则'}
-                     ]},
-                     {'component': 'VCardText', 'content': [
-                        { # 定时周期
-                            'component': 'VRow',
-                            'content': [{
-                                'component': 'VCol', 'props': {'cols': 12},
-                                'content': [{'component': 'VCronField', 'props': {'model': 'cron', 'label': '定时清理周期'}}]
-                            }]
-                        },
-                        { # 保留行数 和 选择插件
-                            'component': 'VRow',
-                            'content': [
-                                {
-                                    'component': 'VCol', 'props': {'cols': 12, 'md': 6},
-                                    'content': [{'component': 'VTextField', 'props': {'model': 'rows', 'label': '保留最近行数', 'type': 'number', 'placeholder': '300'}}]
-                                },
-                                {
-                                    'component': 'VCol', 'props': {'cols': 12, 'md': 6},
-                                    'content': [{'component': 'VSelect', 'props': {'multiple': True, 'chips': True, 'model': 'selected_ids', 'label': '指定清理插件 (留空则清理所有)', 'items': plugin_options}}]
-                                }
-                            ]
-                        }
-                    ]}
-                ]
-            },
-            # 卡片3：提示信息
-            {
-                'component': 'VCard',
-                'props': {'variant': 'tonal', 'color': 'info'},
-                'content': [
-                     {'component': 'VCardText', 'props': {'class': 'd-flex align-center'}, 'content': [
-                         {'component': 'VIcon', 'props': {'icon': 'mdi-information-outline', 'start': True, 'size': 'default'}},
-                         {'component': 'span', 'text': '说明：此插件用于定时清理各个插件生成的日志文件（位于 logs/plugins/ 目录下），防止日志文件过大。可设置保留最新的 N 行日志，并选择要清理的插件（不选则清理所有已安装插件）。(基于 honue 原版插件修改)'}
-                     ]}
-                ]
+    # --- 获取插件日志信息 ---
+    def _get_plugins_logs_stats(self) -> List[Dict[str, Any]]:
+        """获取所有插件日志的统计信息（大小、行数等）"""
+        result = []
+        try:
+            # 获取已安装插件列表及其中文名称
+            plugin_name_map = {}
+            plugin_manager = PluginManager()
+            local_plugin_instances = plugin_manager.get_local_plugins() or []
+            installed_plugins = [p for p in local_plugin_instances if getattr(p, 'installed', False)]
+            
+            # 记录日志
+            logger.info(f"{self.plugin_name}: 获取到 {len(installed_plugins)} 个已安装插件")
+            
+            # 构建ID到中文名的映射 - 同时以原始ID和小写ID为键
+            for plugin in installed_plugins:
+                plugin_id = getattr(plugin, 'id', None)
+                plugin_name = getattr(plugin, 'plugin_name', plugin_id)
+                if plugin_id and plugin_name:
+                    plugin_name_map[plugin_id] = plugin_name
+                    plugin_name_map[plugin_id.lower()] = plugin_name
+            
+            # 添加特殊日志文件的显示名称映射
+            special_logs_map = {
+                'plugin': '系统插件日志',
+                'system': '系统日志',
+                'main': '主程序日志',
+                'error': '错误日志',
             }
-        ], {
-            "enable": self._enable,
-            "onlyonce": self._onlyonce,
-            "rows": self._rows,
-            "cron": self._cron,
-            "selected_ids": self._selected_ids,
-            "notify": self._notify
-        }
+            
+            logger.info(f"{self.plugin_name}: 已构建插件名称映射，共 {len(plugin_name_map)} 项")
+
+            # 扫描plugins目录下的所有日志文件
+            log_dir = settings.LOG_PATH / Path("plugins")
+            if not log_dir.exists():
+                logger.warning(f"{self.plugin_name}: 插件日志目录不存在: {log_dir}")
+                return []
+
+            for log_file in log_dir.glob("*.log"):
+                plugin_id = log_file.stem  # 获取不带扩展名的文件名
+                
+                # 获取文件大小
+                file_size = os.path.getsize(log_file)
+                
+                # 获取行数
+                try:
+                    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = f.readlines()
+                        lines_count = len(lines)
+                except Exception as e:
+                    logger.error(f"{self.plugin_name}: 读取日志文件 {log_file} 失败: {e}")
+                    lines_count = -1
+                
+                # 获取插件中文名 - 先检查是否是特殊日志
+                plugin_name = None
+                
+                # 检查是否是特殊日志文件
+                if plugin_id.lower() in special_logs_map:
+                    plugin_name = special_logs_map[plugin_id.lower()]
+                else:
+                    # 尝试用小写ID查找已安装插件的中文名
+                    plugin_name = plugin_name_map.get(plugin_id) or plugin_name_map.get(plugin_id.lower())
+                
+                # 如果仍未找到名称，使用首字母大写的ID作为默认名称
+                if not plugin_name:
+                    plugin_name = plugin_id.capitalize()
+                
+                # 生成结果项
+                result.append({
+                    "id": plugin_id,
+                    "name": plugin_name,
+                    "size": file_size,
+                    "lines_count": lines_count,
+                    "path": str(log_file),
+                    "is_special": plugin_id.lower() in special_logs_map
+                })
+                
+                logger.debug(f"{self.plugin_name}: 处理日志文件 {plugin_id} -> 名称: {plugin_name}, 大小: {file_size}, 行数: {lines_count}")
+            
+            # 按名称排序，但将特殊日志放在前面
+            result.sort(key=lambda x: (0 if x.get("is_special") else 1, x.get("name", "").lower()))
+            
+            logger.info(f"{self.plugin_name}: 获取插件日志信息完成，共 {len(result)} 个日志文件")
+            return result
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 获取插件日志统计信息失败: {e}", exc_info=True)
+            return []
+
+    # --- 清理特定插件日志 ---
+    def _clean_specific_plugin(self, payload: dict) -> Dict[str, Any]:
+        """清理指定插件的日志"""
+        plugin_id = payload.get("plugin_id")
+        if not plugin_id:
+            return {"status": "error", "message": "未指定插件ID"}
+        
+        if not self._enable:
+            return {"status": "error", "message": "插件已禁用，无法执行清理"}
+        
+        try:
+            # 调用_task方法，传入specific_plugin_id参数
+            result = self._task(manual_run=True, specific_plugin_id=plugin_id)
+            return {
+                "status": "success", 
+                "message": f"已完成清理 {plugin_id} 的日志",
+                "result": result
+            }
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 清理插件 {plugin_id} 日志失败: {e}", exc_info=True)
+            return {"status": "error", "message": f"清理失败: {str(e)}"}
 
     @staticmethod
-    def get_local_plugins():
-        """
-        获取本地插件
-        (修改自 PluginReOrder 插件，确保只列出已安装插件)
-        """
-        plugin_manager = PluginManager()
-        # 获取本地所有插件实例
-        local_plugin_instances = plugin_manager.get_local_plugins() or []
-
-        # 过滤出已安装的插件
-        installed_plugins = [p for p in local_plugin_instances if getattr(p, 'installed', False)]
-
-        # 根据插件顺序排序 (可选，但保持与 PluginReOrder 一致)
-        sorted_plugins = sorted(installed_plugins, key=lambda p: getattr(p, 'plugin_order', 1000))
-
-        # 构建 VSelect 需要的选项列表
-        plugin_options = []
-        for plugin in sorted_plugins:
-             # 确保 getattr 有默认值以防万一
-             plugin_name = getattr(plugin, 'plugin_name', getattr(plugin, 'id', '未知插件'))
-             plugin_version = getattr(plugin, 'plugin_version', 'N/A')
-             plugin_id = getattr(plugin, 'id', None)
-             if plugin_id:
-                 plugin_options.append({
-                     "title": f"{plugin_name} v{plugin_version}",
-                     "value": plugin_id
-                 })
-
-        return plugin_options
+    def _get_installed_plugins():
+        plugin_list = []
+        try:
+            plugin_manager = PluginManager()
+            plugins = plugin_manager.get_local_plugins()
+            
+            logger.info(f"正在获取已安装插件列表...")
+            
+            installed_count = 0
+            if plugins:
+                for p in plugins:
+                    if not getattr(p, 'installed', False) or not p.id:
+                        continue
+                        
+                    installed_count += 1
+                    # 获取插件中文名
+                    plugin_name = getattr(p, 'plugin_name', None)
+                    plugin_id = p.id
+                    plugin_version = getattr(p, 'plugin_version', '未知')
+                    
+                    # 确保有正确的标题显示
+                    display_title = f"{plugin_name or plugin_id} v{plugin_version}"
+                    
+                    plugin_list.append({
+                        'title': display_title,
+                        'value': plugin_id  # 使用原始ID作为value
+                    })
+                
+            # 按title排序
+            plugin_list.sort(key=lambda x: x.get('title', '').lower())
+            
+            logger.info(f"获取到 {installed_count} 个已安装插件，返回 {len(plugin_list)} 个有效插件数据")
+            
+        except Exception as e:
+            logger.error(f"获取本地插件列表失败: {e}")
+        return plugin_list
 
     def get_state(self) -> bool:
         return self._enable
 
-    @staticmethod
-    def get_command() -> List[Dict[str, Any]]:
-        pass
+    # --- Instance methods for API endpoints ---
+    def _get_config(self) -> Dict[str, Any]:
+        """API Endpoint: Returns current plugin configuration."""
+        return {
+            "enable": self._enable,
+            "notify": self._notify,
+            "cron": self._cron,
+            "rows": self._rows,
+            "selected_ids": self._selected_ids,
+            "onlyonce": False  # 始终返回False
+        }
+
+    def _save_config(self, config_payload: dict) -> Dict[str, Any]:
+        """API Endpoint: Saves plugin configuration. Expects a dict payload."""
+        logger.info(f"{self.plugin_name}: 收到配置保存请求: {config_payload}")
+        try:
+            # Update instance variables directly from payload, defaulting to current values if key is missing
+            self._enable = config_payload.get('enable', self._enable)
+            self._notify = config_payload.get('notify', self._notify)
+            self._cron = config_payload.get('cron', self._cron)
+            self._rows = int(config_payload.get('rows', self._rows))
+            self._selected_ids = config_payload.get('selected_ids', self._selected_ids)
+            
+            # 忽略onlyonce参数
+
+            # Prepare config to save
+            config_to_save = {
+                "enable": self._enable,
+                "notify": self._notify,
+                "cron": self._cron,
+                "rows": self._rows,
+                "selected_ids": self._selected_ids,
+                "onlyonce": False  # 始终设为False
+            }
+            
+            # 保存配置
+            self.update_config(config_to_save)
+            
+            # 重新初始化插件
+            self.stop_service()
+            self.init_plugin(self.get_config())
+            
+            logger.info(f"{self.plugin_name}: 配置已保存并通过 init_plugin 重新初始化。当前内存状态: enable={self._enable}")
+            
+            # 返回最终状态
+            return {"message": "配置已成功保存", "saved_config": self._get_config()}
+
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 保存配置时发生错误: {e}", exc_info=True)
+            # Return current in-memory config on error
+            return {"message": f"保存配置失败: {e}", "error": True, "saved_config": self._get_config()}
+
+    def _trigger_manual_clean(self) -> Dict[str, Any]:
+        """API Endpoint: Triggers a manual clean task."""
+        logger.info(f"{self.plugin_name}: 收到手动清理请求...")
+        if not self._enable:
+             logger.warning(f"{self.plugin_name}: 插件当前已禁用，无法执行手动清理。")
+             return {"message": "插件已禁用，无法执行清理", "error": True}
+        try:
+            # 暂存原始配置
+            original_selected_ids = self._selected_ids
+            
+            # 临时设置为空列表，强制清理所有插件
+            self._selected_ids = []
+            logger.info(f"{self.plugin_name}: 强制清理所有插件，暂时忽略配置中的插件列表")
+            
+            # 明确传递specific_plugin_id=None以清理所有插件
+            result = self._task(manual_run=True, specific_plugin_id=None)
+            
+            # 恢复原始配置
+            self._selected_ids = original_selected_ids
+            
+            return {"message": "清理任务已完成", "result": result}
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 手动清理任务失败: {e}", exc_info=True)
+            return {"message": f"手动清理失败: {e}", "error": True}
+
+    def _get_status(self) -> Dict[str, Any]:
+        """API Endpoint: Returns current plugin status and history."""
+        last_run = self.get_data('last_run_results') or []
+        history = self.get_data('cleaning_history') or []
+        next_run_time = None
+        if self._scheduler and self._scheduler.running:
+            jobs = self._scheduler.get_jobs()
+            if jobs:
+                next_run_time_dt = jobs[0].next_run_time
+                if next_run_time_dt:
+                     # Format with timezone explicitly if possible
+                     try:
+                         tz = pytz.timezone(settings.TZ)
+                         localized_time = tz.localize(next_run_time_dt.replace(tzinfo=None)) # Assume naive, make aware
+                         next_run_time = localized_time.strftime('%Y-%m-%d %H:%M:%S %Z')
+                     except Exception: # Fallback for any timezone issue
+                         next_run_time = next_run_time_dt.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    next_run_time = "无计划运行"
+            else:
+                 next_run_time = "无计划任务"
+        else:
+            if not self._enable: next_run_time = "插件已禁用"
+            else: next_run_time = "调度器未运行"
+
+        return {
+            "enabled": self._enable,
+            "cron": self._cron,
+            "rows": self._rows,
+            "next_run_time": next_run_time,
+            "last_run_results": last_run,
+            "cleaning_history": history
+        }
+
+    # --- Abstract/Base Methods Implementation ---
+    
+    def get_form(self) -> Tuple[Optional[List[dict]], Dict[str, Any]]:
+        """Returns None for Vue form, but provides initial config data."""
+        # This dict is passed as initialConfig to Config.vue by the host
+        return None, self._get_config()
+
+    def get_page(self) -> Optional[List[dict]]:
+        """Vue mode doesn't use Vuetify page definitions."""
+        return None
 
     def get_api(self) -> List[Dict[str, Any]]:
-        pass
-
-    def get_page(self) -> List[dict]:
-        """
-        构建插件详情页面，展示清理结果和历史
-        """
-        # --- 新增：获取插件ID到名称的映射 ---
-        plugin_id_to_name_map = {}
-        try:
-            plugin_manager = PluginManager()
-            local_plugin_instances = plugin_manager.get_local_plugins() or []
-            installed_plugins = [p for p in local_plugin_instances if getattr(p, 'installed', False)]
-            for plugin in installed_plugins:
-                plugin_id = getattr(plugin, 'id', None)
-                plugin_name = getattr(plugin, 'plugin_name', plugin_id) # 获取中文名，如果失败则用ID
-                if plugin_id:
-                    plugin_id_to_name_map[plugin_id] = plugin_name
-        except Exception as e:
-            logger.error(f"获取插件名称映射失败: {e}")
-        # --- 映射结束 ---
-
-        # 1. 获取上次运行结果
-        last_run_results = self.get_data('last_run_results') or []
-        last_run_table_rows = []
-        if not last_run_results:
-            last_run_content = [{'component': 'VAlert', 'props': {'type': 'info', 'variant': 'tonal', 'text': '暂无上次运行结果，请运行一次清理任务。'}}]
-        else:
-            for result in last_run_results:
-                plugin_id = result.get('plugin_id', 'N/A')
-                # 使用映射获取插件名称，如果找不到则显示 ID
-                display_name = plugin_id_to_name_map.get(plugin_id, plugin_id)
-                last_run_table_rows.append({
-                    'component': 'tr',
-                    'content': [
-                        {'component': 'td', 'text': display_name},
-                        {'component': 'td', 'text': str(result.get('original_lines', 0))},
-                        {'component': 'td', 'text': str(result.get('kept_lines', 0))},
-                        {'component': 'td', 'text': str(result.get('cleaned_lines', 0))}
-                    ]
-                })
-            last_run_content = [{'component': 'VTable', 'props': {'hover': True, 'density': 'compact'}, 'content': [
-                {'component': 'thead', 'content': [{'component': 'tr', 'content': [
-                    {'component': 'th', 'text': '插件名称'},
-                    {'component': 'th', 'text': '原始行数'},
-                    {'component': 'th', 'text': '保留行数'},
-                    {'component': 'th', 'text': '清理行数'}
-                ]}]},
-                {'component': 'tbody', 'content': last_run_table_rows}
-            ]}]
-
-        # 2. 获取清理历史
-        history = self.get_data('cleaning_history') or []
-        history_table_rows = []
-        if not history:
-             history_content = [{'component': 'VAlert', 'props': {'type': 'info', 'variant': 'tonal', 'text': '暂无清理历史记录。'}}]
-        else:
-            for record in history:
-                 history_table_rows.append({
-                    'component': 'tr',
-                    'content': [
-                        {'component': 'td', 'props': {'class': 'text-caption'}, 'text': record.get('timestamp', 'N/A')},
-                        {'component': 'td', 'text': str(record.get('total_plugins_processed', 0))},
-                        {'component': 'td', 'text': str(record.get('total_lines_cleaned', 0))}
-                    ]
-                })
-            history_content = [{'component': 'VTable', 'props': {'hover': True, 'density': 'compact'}, 'content': [
-                {'component': 'thead', 'content': [{'component': 'tr', 'content': [
-                    {'component': 'th', 'text': '时间'},
-                    {'component': 'th', 'text': '处理插件数'},
-                    {'component': 'th', 'text': '清理总行数'}
-                ]}]},
-                {'component': 'tbody', 'content': history_table_rows}
-            ]}]
-
-        # 3. 组装页面
+        """Defines API endpoints accessible via props.api in Vue components."""
         return [
             {
-                'component': 'VCard', 'props': {'variant': 'outlined', 'class': 'mb-4'},
-                'content': [
-                    {'component': 'VCardTitle', 'props': {'class': 'text-h6 d-flex align-center'}, 'content': [
-                        {'component': 'VIcon', 'props':{'icon':'mdi-clipboard-text-clock-outline', 'start': True, 'color': 'blue-grey'}},
-                        {'component': 'span', 'text': '📊 上次运行结果'}
-                    ]},
-                    {'component': 'VCardText', 'content': last_run_content}
-                ]
+                "path": "/config",
+                "endpoint": self._get_config,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取当前配置"
             },
             {
-                'component': 'VCard', 'props': {'variant': 'outlined'},
-                'content': [
-                     {'component': 'VCardTitle', 'props': {'class': 'text-h6 d-flex align-center'}, 'content': [
-                        {'component': 'VIcon', 'props':{'icon':'mdi-history', 'start': True, 'color': 'deep-purple-accent-1'}},
-                        {'component': 'span', 'text': '📜 清理历史记录'}
-                     ]},
-                    {'component': 'VCardText', 'content': history_content}
-                ]
+                "path": "/config",
+                "endpoint": self._save_config,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "保存配置"
+            },
+            {
+                "path": "/clean",
+                "endpoint": self._trigger_manual_clean,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "触发手动清理"
+            },
+            {
+                "path": "/status",
+                "endpoint": self._get_status,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取状态和历史"
+            },
+            {
+                "path": "/installed_plugins",
+                "endpoint": self._get_installed_plugins,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取已安装插件列表"
+            },
+            {
+                "path": "/logs_stats", 
+                "endpoint": self._get_plugins_logs_stats,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取插件日志统计信息"
+            },
+            {
+                "path": "/clean_plugin",
+                "endpoint": self._clean_specific_plugin,
+                "methods": ["POST"],
+                "auth": "bear", 
+                "summary": "清理指定插件日志"
             }
         ]
 
+    # --- V2 Vue Interface Method ---
+    @staticmethod
+    def get_render_mode() -> Tuple[str, Optional[str]]:
+        """Declare Vue rendering mode and assets path."""
+        return "vue", "dist/assets"
+
+    # --- Other Base Methods ---
+    @staticmethod
+    def get_command() -> List[Dict[str, Any]]:
+        return [] # No commands defined for this plugin
+
     def stop_service(self):
-        pass
+        if self._scheduler:
+            try:
+                self._scheduler.shutdown(wait=False)
+                self._scheduler = None
+                logger.info(f"{self.plugin_name}: 定时任务已停止")
+            except Exception as e:
+                logger.error(f"{self.plugin_name}: 停止定时任务失败: {e}")
+
+    def get_dashboard_meta(self) -> Optional[List[Dict[str, str]]]:
+        """
+        获取插件仪表盘元信息
+        返回示例：
+            [{
+                "key": "dashboard1", // 仪表盘的key，在当前插件范围唯一
+                "name": "仪表盘1" // 仪表盘的名称
+            }, {
+                "key": "dashboard2",
+                "name": "仪表盘2"
+            }]
+        """
+        return [
+            {
+                "key": "dashboard1",
+                "name": "插件日志清理"
+            }
+        ]
+
+    def get_dashboard(self, key: str, **kwargs) -> Optional[
+        Tuple[Dict[str, Any], Dict[str, Any], Optional[List[dict]]]]:
+        """
+        获取插件仪表盘页面，需要返回：1、仪表板col配置字典；2、全局配置（布局、自动刷新等）；3、仪表板页面元素配置含数据json（vuetify）或 None（vue模式）
+        1、col配置参考：
+        {
+            "cols": 12, "md": 6
+        }
+        2、全局配置参考：
+        {
+            "refresh": 10, // 自动刷新时间，单位秒
+            "border": True, // 是否显示边框，默认True，为False时取消组件边框和边距，由插件自行控制
+            "title": "组件标题", // 组件标题，如有将显示该标题，否则显示插件名称
+            "subtitle": "组件子标题", // 组件子标题，缺省时不展示子标题
+        }
+        3、vuetify模式页面配置使用Vuetify组件拼装，参考：https://vuetifyjs.com/；vue模式为None
+
+        kwargs参数可获取的值：1、user_agent：浏览器UA
+
+        :param key: 仪表盘key，根据指定的key返回相应的仪表盘数据，缺省时返回一个固定的仪表盘数据（兼容旧版）
+        """
+        return {
+            "cols": 12,
+            "md": 6
+        }, {
+            "refresh": 10,
+            "border": True,
+            "title": "插件日志清理",
+            "subtitle": "定时清理插件产生的日志"
+        }, None
+
+    def get_dashboard_meta(self) -> Optional[List[Dict[str, str]]]:
+        """
+        获取插件仪表盘元信息
+        返回示例：
+            [{
+                "key": "dashboard1", // 仪表盘的key，在当前插件范围唯一
+                "name": "仪表盘1" // 仪表盘的名称
+            }, {
+                "key": "dashboard2",
+                "name": "仪表盘2"
+            }]
+        """
+        return [
+            {
+                "key": "dashboard1",
+                "name": "插件日志清理"
+            }
+        ]
