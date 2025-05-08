@@ -201,6 +201,20 @@
                   <v-divider vertical class="mx-1"></v-divider>
                   <v-chip size="x-small" color="error-lighten-3" class="mr-1">已删除</v-chip>
                   <span class="text-caption">{{ logStatistics.deleted }}</span>
+                  
+                  <v-menu v-if="logStatistics.deleted > 0 || logStatistics.split > 0">
+                    <template v-slot:activator="{ props }">
+                      <v-btn v-bind="props" variant="text" color="error" density="comfortable" size="x-small" class="ml-2">
+                        批量操作
+                        <v-icon right size="small">mdi-chevron-down</v-icon>
+                      </v-btn>
+                    </template>
+                    <v-list density="compact">
+                      <v-list-item v-if="logStatistics.deleted > 0" @click="showBatchDeleteConfirm('deleted')" prepend-icon="mdi-delete-sweep" title="清除所有已删除插件日志" />
+                      <v-list-item v-if="logStatistics.split > 0" @click="showBatchDeleteConfirm('split')" prepend-icon="mdi-file-multiple" title="清除所有分割日志文件" />
+                      <v-list-item v-if="logStatistics.deleted > 0 && logStatistics.split > 0" @click="showBatchDeleteConfirm('all')" prepend-icon="mdi-delete-alert" title="清除已删除插件和分割日志" />
+                    </v-list>
+                  </v-menu>
                 </div>
                 <v-text-field
                   v-model="pluginSearch"
@@ -283,7 +297,6 @@
                             <v-tooltip activator="parent" location="top">清理此日志</v-tooltip>
                           </v-btn>
                           <v-btn 
-                            v-if="isDeletedPluginLog(plugin.id) || isSplitLogFile(plugin.id)"
                             density="comfortable" 
                             icon 
                             variant="text" 
@@ -294,7 +307,7 @@
                             @click="deleteLogFile(plugin.id, plugin.name)"
                           >
                             <v-icon icon="mdi-delete" size="small"></v-icon>
-                            <v-tooltip activator="parent" location="top">删除日志文件</v-tooltip>
+                            <v-tooltip activator="parent" location="top">删除此日志</v-tooltip>
                           </v-btn>
                         </div>
                       </td>
@@ -385,6 +398,35 @@
           <v-spacer></v-spacer>
           <v-btn variant="text" color="grey" @click="showDeleteConfirmDialog = false">取消</v-btn>
           <v-btn variant="text" color="error" @click="confirmDeleteLogFile">确认删除</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 批量删除确认对话框 -->
+    <v-dialog v-model="showBatchDeleteConfirmDialog" max-width="450">
+      <v-card>
+        <v-card-title class="text-subtitle-1 d-flex align-center px-4 py-3 bg-error-lighten-5 text-error">
+          <v-icon icon="mdi-alert" class="mr-2" color="error" />
+          <span>批量删除确认</span>
+        </v-card-title>
+        <v-card-text class="pa-4">
+          <p>{{ batchDeleteConfirmMessage }}</p>
+          <v-alert v-if="batchDeleteType" type="warning" density="compact" variant="tonal" class="mt-2">
+            此操作无法撤销，请谨慎操作！
+          </v-alert>
+        </v-card-text>
+        <v-card-actions class="px-4 py-3">
+          <v-spacer></v-spacer>
+          <v-btn variant="text" color="grey" @click="cancelBatchDelete">取消</v-btn>
+          <v-btn 
+            variant="text" 
+            color="error" 
+            @click="confirmBatchDelete"
+            :loading="batchDeleting"
+            :disabled="batchDeleting"
+          >
+            确认删除
+          </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -860,6 +902,12 @@ const deletingLogFile = ref(null);
 const deletingLogName = ref('');
 const showDeleteConfirmDialog = ref(false);
 
+// 批量删除相关变量
+const showBatchDeleteConfirmDialog = ref(false);
+const batchDeleteType = ref(null); // 'deleted', 'split', 'all'
+const batchDeleteConfirmMessage = ref('');
+const batchDeleting = ref(false);
+
 // 显示删除确认对话框
 function deleteLogFile(pluginId, pluginName) {
   const plugin = pluginLogsSizes.value.find(p => p.id === pluginId);
@@ -979,6 +1027,81 @@ function updateLogStatistics() {
       logStatistics.installed++;
     }
   });
+}
+
+// 批量删除函数
+function showBatchDeleteConfirm(type) {
+  batchDeleteType.value = type;
+  
+  // 设置确认消息
+  if (type === 'deleted') {
+    batchDeleteConfirmMessage.value = `确定要删除所有已删除插件的日志文件吗？当前有 ${logStatistics.deleted} 个文件。`;
+  } else if (type === 'split') {
+    batchDeleteConfirmMessage.value = `确定要删除所有分割日志文件吗？当前有 ${logStatistics.split} 个文件。`;
+  } else if (type === 'all') {
+    batchDeleteConfirmMessage.value = `确定要删除所有已删除插件日志和分割日志文件吗？当前共有 ${logStatistics.deleted + logStatistics.split} 个文件。`;
+  }
+  
+  showBatchDeleteConfirmDialog.value = true;
+}
+
+function cancelBatchDelete() {
+  showBatchDeleteConfirmDialog.value = false;
+  batchDeleteType.value = null;
+  batchDeleteConfirmMessage.value = '';
+}
+
+async function confirmBatchDelete() {
+  batchDeleting.value = true;
+  error.value = null;
+  actionMessage.value = null;
+  
+  try {
+    const pluginId = getPluginId();
+    let endpoint = '';
+    let payload = {};
+    
+    // 根据类型选择API端点
+    if (batchDeleteType.value === 'deleted') {
+      endpoint = 'batch_delete';
+      payload = { type: 'deleted' };
+    } else if (batchDeleteType.value === 'split') {
+      endpoint = 'batch_delete';
+      payload = { type: 'split' };
+    } else if (batchDeleteType.value === 'all') {
+      endpoint = 'batch_delete';
+      payload = { type: 'all' };
+    } else {
+      throw new Error('未知的批量删除类型');
+    }
+    
+    // 调用API
+    const data = await props.api.post(`plugin/${pluginId}/${endpoint}`, payload);
+    
+    if (data) {
+      if (data.error) {
+        throw new Error(data.message || '批量删除操作失败');
+      }
+      
+      // 显示成功消息
+      actionMessage.value = data.message || '批量删除操作已完成';
+      actionMessageType.value = 'success';
+      
+      // 刷新日志列表
+      setTimeout(() => loadPluginLogsSizes(), 1000);
+    } else {
+      throw new Error('批量删除请求无响应');
+    }
+  } catch (err) {
+    console.error('批量删除失败:', err);
+    error.value = err.message || '批量删除操作失败';
+    actionMessageType.value = 'error';
+  } finally {
+    batchDeleting.value = false;
+    showBatchDeleteConfirmDialog.value = false;
+    batchDeleteType.value = null;
+    setTimeout(() => { actionMessage.value = null; }, 5000);
+  }
 }
 
 // Fetch initial data when component is mounted

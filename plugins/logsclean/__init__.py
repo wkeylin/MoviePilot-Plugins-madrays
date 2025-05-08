@@ -643,6 +643,97 @@ class LogsClean(_PluginBase):
             logger.error(f"{self.plugin_name}: 删除分割日志文件失败: {e}", exc_info=True)
             return {"status": "error", "message": f"删除分割日志文件失败: {str(e)}"}
 
+    # --- 批量删除日志文件 ---
+    def _batch_delete_logs(self, payload: dict) -> Dict[str, Any]:
+        """批量删除日志文件，支持删除已删除插件日志和分割日志"""
+        delete_type = payload.get("type")
+        if not delete_type:
+            return {"status": "error", "message": "未指定批量删除类型"}
+        
+        logger.info(f"{self.plugin_name}: 收到批量删除请求，类型: {delete_type}")
+        
+        try:
+            # 确保日志目录存在
+            log_dir = settings.LOG_PATH / Path("plugins")
+            if not log_dir.exists():
+                return {"status": "error", "message": f"插件日志目录不存在: {log_dir}"}
+            
+            # 获取所有日志文件
+            log_files_stats = self._get_plugins_logs_stats()
+            
+            # 标记要删除的文件
+            files_to_delete = []
+            
+            # 获取已安装的插件ID列表（用于判断是否为已删除插件）
+            installed_plugins = []
+            try:
+                plugin_manager = PluginManager()
+                local_plugin_instances = plugin_manager.get_local_plugins() or []
+                installed_plugins = [p.id.lower() for p in local_plugin_instances 
+                                   if getattr(p, 'installed', False) and hasattr(p, 'id')]
+            except Exception as e:
+                logger.error(f"{self.plugin_name}: 获取已安装插件列表失败: {e}")
+            
+            # 判断日志文件是否属于已删除插件的函数
+            def is_deleted_plugin_log(plugin_info):
+                # 系统日志不算已删除插件
+                if plugin_info.get("is_special", False):
+                    return False
+                
+                # 获取基础ID
+                base_id = plugin_info.get("original_id", plugin_info.get("id", "")).lower()
+                
+                # 检查是否不在已安装插件列表中
+                return not any(base_id == p_id or base_id.startswith(p_id) or p_id.startswith(base_id) 
+                            for p_id in installed_plugins)
+            
+            # 根据批量删除类型收集要删除的文件
+            if delete_type == "deleted" or delete_type == "all":
+                # 收集已删除插件的日志
+                for log_info in log_files_stats:
+                    if is_deleted_plugin_log(log_info) and not log_info.get("is_split", False):
+                        files_to_delete.append(log_info)
+            
+            if delete_type == "split" or delete_type == "all":
+                # 收集分割日志文件
+                for log_info in log_files_stats:
+                    if log_info.get("is_split", False):
+                        files_to_delete.append(log_info)
+            
+            # 执行删除操作
+            deleted_count = 0
+            for file_info in files_to_delete:
+                file_path = file_info.get("path")
+                if not file_path:
+                    continue
+                
+                try:
+                    file_path = Path(file_path)
+                    if file_path.exists():
+                        file_path.unlink()
+                        logger.info(f"{self.plugin_name}: 已批量删除日志文件: {file_path}")
+                        deleted_count += 1
+                except Exception as e:
+                    logger.error(f"{self.plugin_name}: 批量删除日志文件失败: {file_path} - {e}")
+            
+            # 构建响应消息
+            message = ""
+            if delete_type == "deleted":
+                message = f"已成功删除 {deleted_count} 个已删除插件的日志文件"
+            elif delete_type == "split":
+                message = f"已成功删除 {deleted_count} 个分割日志文件"
+            elif delete_type == "all":
+                message = f"已成功删除 {deleted_count} 个日志文件（含已删除插件日志和分割日志）"
+            
+            return {
+                "status": "success",
+                "message": message,
+                "deleted_count": deleted_count
+            }
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 批量删除日志文件失败: {e}", exc_info=True)
+            return {"status": "error", "message": f"批量删除日志文件失败: {str(e)}"}
+
     # --- Abstract/Base Methods Implementation ---
     
     def get_form(self) -> Tuple[Optional[List[dict]], Dict[str, Any]]:
@@ -719,6 +810,13 @@ class LogsClean(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear", 
                 "summary": "删除指定插件的所有分割日志文件"
+            },
+            {
+                "path": "/batch_delete",
+                "endpoint": self._batch_delete_logs,
+                "methods": ["POST"],
+                "auth": "bear", 
+                "summary": "批量删除日志文件"
             }
         ]
 

@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
-const {resolveComponent:_resolveComponent,createVNode:_createVNode,createElementVNode:_createElementVNode,withCtx:_withCtx,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,renderList:_renderList,Fragment:_Fragment,normalizeClass:_normalizeClass} = await importShared('vue');
+const {resolveComponent:_resolveComponent,createVNode:_createVNode,createElementVNode:_createElementVNode,withCtx:_withCtx,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,renderList:_renderList,Fragment:_Fragment,normalizeClass:_normalizeClass,mergeProps:_mergeProps} = await importShared('vue');
 
 
 const _hoisted_1 = { class: "plugin-page" };
@@ -506,6 +506,12 @@ const deletingLogFile = ref(null);
 const deletingLogName = ref('');
 const showDeleteConfirmDialog = ref(false);
 
+// 批量删除相关变量
+const showBatchDeleteConfirmDialog = ref(false);
+const batchDeleteType = ref(null); // 'deleted', 'split', 'all'
+const batchDeleteConfirmMessage = ref('');
+const batchDeleting = ref(false);
+
 // 显示删除确认对话框
 function deleteLogFile(pluginId, pluginName) {
   const plugin = pluginLogsSizes.value.find(p => p.id === pluginId);
@@ -595,6 +601,81 @@ function updateLogStatistics() {
   });
 }
 
+// 批量删除函数
+function showBatchDeleteConfirm(type) {
+  batchDeleteType.value = type;
+  
+  // 设置确认消息
+  if (type === 'deleted') {
+    batchDeleteConfirmMessage.value = `确定要删除所有已删除插件的日志文件吗？当前有 ${logStatistics.deleted} 个文件。`;
+  } else if (type === 'split') {
+    batchDeleteConfirmMessage.value = `确定要删除所有分割日志文件吗？当前有 ${logStatistics.split} 个文件。`;
+  } else if (type === 'all') {
+    batchDeleteConfirmMessage.value = `确定要删除所有已删除插件日志和分割日志文件吗？当前共有 ${logStatistics.deleted + logStatistics.split} 个文件。`;
+  }
+  
+  showBatchDeleteConfirmDialog.value = true;
+}
+
+function cancelBatchDelete() {
+  showBatchDeleteConfirmDialog.value = false;
+  batchDeleteType.value = null;
+  batchDeleteConfirmMessage.value = '';
+}
+
+async function confirmBatchDelete() {
+  batchDeleting.value = true;
+  error.value = null;
+  actionMessage.value = null;
+  
+  try {
+    const pluginId = getPluginId();
+    let endpoint = '';
+    let payload = {};
+    
+    // 根据类型选择API端点
+    if (batchDeleteType.value === 'deleted') {
+      endpoint = 'batch_delete';
+      payload = { type: 'deleted' };
+    } else if (batchDeleteType.value === 'split') {
+      endpoint = 'batch_delete';
+      payload = { type: 'split' };
+    } else if (batchDeleteType.value === 'all') {
+      endpoint = 'batch_delete';
+      payload = { type: 'all' };
+    } else {
+      throw new Error('未知的批量删除类型');
+    }
+    
+    // 调用API
+    const data = await props.api.post(`plugin/${pluginId}/${endpoint}`, payload);
+    
+    if (data) {
+      if (data.error) {
+        throw new Error(data.message || '批量删除操作失败');
+      }
+      
+      // 显示成功消息
+      actionMessage.value = data.message || '批量删除操作已完成';
+      actionMessageType.value = 'success';
+      
+      // 刷新日志列表
+      setTimeout(() => loadPluginLogsSizes(), 1000);
+    } else {
+      throw new Error('批量删除请求无响应');
+    }
+  } catch (err) {
+    console.error('批量删除失败:', err);
+    error.value = err.message || '批量删除操作失败';
+    actionMessageType.value = 'error';
+  } finally {
+    batchDeleting.value = false;
+    showBatchDeleteConfirmDialog.value = false;
+    batchDeleteType.value = null;
+    setTimeout(() => { actionMessage.value = null; }, 5000);
+  }
+}
+
 // Fetch initial data when component is mounted
 onMounted(() => {
   fetchStatusData();
@@ -618,6 +699,7 @@ return (_ctx, _cache) => {
   const _component_v_timeline = _resolveComponent("v-timeline");
   const _component_v_row = _resolveComponent("v-row");
   const _component_v_table = _resolveComponent("v-table");
+  const _component_v_menu = _resolveComponent("v-menu");
   const _component_v_text_field = _resolveComponent("v-text-field");
   const _component_v_tooltip = _resolveComponent("v-tooltip");
   const _component_v_progress_circular = _resolveComponent("v-progress-circular");
@@ -639,7 +721,7 @@ return (_ctx, _cache) => {
               color: "primary",
               size: "small"
             }),
-            _cache[8] || (_cache[8] = _createElementVNode("span", null, "日志清理", -1))
+            _cache[12] || (_cache[12] = _createElementVNode("span", null, "日志清理", -1))
           ]),
           _: 1
         }),
@@ -703,7 +785,7 @@ return (_ctx, _cache) => {
                                     color: "primary",
                                     size: "small"
                                   }),
-                                  _cache[9] || (_cache[9] = _createElementVNode("span", null, "当前状态", -1))
+                                  _cache[13] || (_cache[13] = _createElementVNode("span", null, "当前状态", -1))
                                 ]),
                                 _: 1
                               }),
@@ -733,7 +815,7 @@ return (_ctx, _cache) => {
                                         ]),
                                         default: _withCtx(() => [
                                           _createVNode(_component_v_list_item_title, { class: "text-caption" }, {
-                                            default: _withCtx(() => _cache[10] || (_cache[10] = [
+                                            default: _withCtx(() => _cache[14] || (_cache[14] = [
                                               _createTextVNode("插件状态")
                                             ])),
                                             _: 1
@@ -755,7 +837,7 @@ return (_ctx, _cache) => {
                                         ]),
                                         default: _withCtx(() => [
                                           _createVNode(_component_v_list_item_title, { class: "text-caption" }, {
-                                            default: _withCtx(() => _cache[11] || (_cache[11] = [
+                                            default: _withCtx(() => _cache[15] || (_cache[15] = [
                                               _createTextVNode("CRON表达式")
                                             ])),
                                             _: 1
@@ -777,7 +859,7 @@ return (_ctx, _cache) => {
                                         ]),
                                         default: _withCtx(() => [
                                           _createVNode(_component_v_list_item_title, { class: "text-caption" }, {
-                                            default: _withCtx(() => _cache[12] || (_cache[12] = [
+                                            default: _withCtx(() => _cache[16] || (_cache[16] = [
                                               _createTextVNode("下次运行")
                                             ])),
                                             _: 1
@@ -799,7 +881,7 @@ return (_ctx, _cache) => {
                                         ]),
                                         default: _withCtx(() => [
                                           _createVNode(_component_v_list_item_title, { class: "text-caption" }, {
-                                            default: _withCtx(() => _cache[13] || (_cache[13] = [
+                                            default: _withCtx(() => _cache[17] || (_cache[17] = [
                                               _createTextVNode("保留日志行数")
                                             ])),
                                             _: 1
@@ -837,7 +919,7 @@ return (_ctx, _cache) => {
                                     color: "primary",
                                     size: "small"
                                   }),
-                                  _cache[14] || (_cache[14] = _createElementVNode("span", null, "清理历史", -1))
+                                  _cache[18] || (_cache[18] = _createElementVNode("span", null, "清理历史", -1))
                                 ]),
                                 _: 1
                               }),
@@ -850,7 +932,7 @@ return (_ctx, _cache) => {
                                           size: "small",
                                           class: "mb-1"
                                         }),
-                                        _cache[15] || (_cache[15] = _createElementVNode("div", { class: "text-caption" }, "暂无清理历史记录", -1))
+                                        _cache[19] || (_cache[19] = _createElementVNode("div", { class: "text-caption" }, "暂无清理历史记录", -1))
                                       ]))
                                     : (_openBlock(), _createBlock(_component_v_timeline, {
                                         key: 1,
@@ -868,7 +950,7 @@ return (_ctx, _cache) => {
                                             }, {
                                               icon: _withCtx(() => [
                                                 _createVNode(_component_v_icon, { size: "x-small" }, {
-                                                  default: _withCtx(() => _cache[16] || (_cache[16] = [
+                                                  default: _withCtx(() => _cache[20] || (_cache[20] = [
                                                     _createTextVNode("mdi-broom")
                                                   ])),
                                                   _: 1
@@ -889,7 +971,7 @@ return (_ctx, _cache) => {
                                                   }, 1032, ["color"])
                                                 ]),
                                                 _createElementVNode("div", _hoisted_9, [
-                                                  _cache[17] || (_cache[17] = _createTextVNode(" 清理 ")),
+                                                  _cache[21] || (_cache[21] = _createTextVNode(" 清理 ")),
                                                   _createElementVNode("strong", null, _toDisplayString(item.total_lines_cleaned), 1),
                                                   _createTextVNode(" 行 (" + _toDisplayString(item.total_plugins_processed) + " 个插件) ", 1)
                                                 ])
@@ -905,7 +987,7 @@ return (_ctx, _cache) => {
                                               }, {
                                                 icon: _withCtx(() => [
                                                   _createVNode(_component_v_icon, { size: "x-small" }, {
-                                                    default: _withCtx(() => _cache[18] || (_cache[18] = [
+                                                    default: _withCtx(() => _cache[22] || (_cache[22] = [
                                                       _createTextVNode("mdi-dots-horizontal")
                                                     ])),
                                                     _: 1
@@ -922,7 +1004,7 @@ return (_ctx, _cache) => {
                                                       class: "ml-2",
                                                       onClick: _cache[0] || (_cache[0] = $event => (showHistoryDialog.value = true))
                                                     }, {
-                                                      default: _withCtx(() => _cache[19] || (_cache[19] = [
+                                                      default: _withCtx(() => _cache[23] || (_cache[23] = [
                                                         _createTextVNode(" 查看更多 ")
                                                       ])),
                                                       _: 1
@@ -960,7 +1042,7 @@ return (_ctx, _cache) => {
                             color: "primary",
                             size: "small"
                           }),
-                          _cache[20] || (_cache[20] = _createElementVNode("span", null, "上次清理详情", -1)),
+                          _cache[24] || (_cache[24] = _createElementVNode("span", null, "上次清理详情", -1)),
                           _createVNode(_component_v_chip, {
                             class: "ml-1",
                             size: "x-small",
@@ -986,7 +1068,7 @@ return (_ctx, _cache) => {
                                 size: "small",
                                 class: "mb-1"
                               }),
-                              _cache[21] || (_cache[21] = _createElementVNode("div", { class: "text-caption" }, "暂无上次运行数据", -1))
+                              _cache[25] || (_cache[25] = _createElementVNode("div", { class: "text-caption" }, "暂无上次运行数据", -1))
                             ]),
                             _: 1
                           }))
@@ -1002,7 +1084,7 @@ return (_ctx, _cache) => {
                                   class: "text-body-2"
                                 }, {
                                   default: _withCtx(() => [
-                                    _cache[22] || (_cache[22] = _createElementVNode("thead", null, [
+                                    _cache[26] || (_cache[26] = _createElementVNode("thead", null, [
                                       _createElementVNode("tr", null, [
                                         _createElementVNode("th", { class: "text-body-2 font-weight-bold" }, "插件名称"),
                                         _createElementVNode("th", { class: "text-body-2 font-weight-bold text-center" }, "原行数"),
@@ -1066,7 +1148,7 @@ return (_ctx, _cache) => {
                               color: "primary",
                               size: "small"
                             }),
-                            _cache[23] || (_cache[23] = _createElementVNode("span", null, "插件日志状态", -1)),
+                            _cache[27] || (_cache[27] = _createElementVNode("span", null, "插件日志状态", -1)),
                             (logStatistics.total > 0)
                               ? (_openBlock(), _createBlock(_component_v_chip, {
                                   key: 0,
@@ -1089,7 +1171,7 @@ return (_ctx, _cache) => {
                                 color: "grey-lighten-2",
                                 class: "mr-1"
                               }, {
-                                default: _withCtx(() => _cache[24] || (_cache[24] = [
+                                default: _withCtx(() => _cache[28] || (_cache[28] = [
                                   _createTextVNode("系统")
                                 ])),
                                 _: 1
@@ -1104,7 +1186,7 @@ return (_ctx, _cache) => {
                                 color: "primary-lighten-3",
                                 class: "mr-1"
                               }, {
-                                default: _withCtx(() => _cache[25] || (_cache[25] = [
+                                default: _withCtx(() => _cache[29] || (_cache[29] = [
                                   _createTextVNode("已安装")
                                 ])),
                                 _: 1
@@ -1119,16 +1201,75 @@ return (_ctx, _cache) => {
                                 color: "error-lighten-3",
                                 class: "mr-1"
                               }, {
-                                default: _withCtx(() => _cache[26] || (_cache[26] = [
+                                default: _withCtx(() => _cache[30] || (_cache[30] = [
                                   _createTextVNode("已删除")
                                 ])),
                                 _: 1
                               }),
-                              _createElementVNode("span", _hoisted_22, _toDisplayString(logStatistics.deleted), 1)
+                              _createElementVNode("span", _hoisted_22, _toDisplayString(logStatistics.deleted), 1),
+                              (logStatistics.deleted > 0 || logStatistics.split > 0)
+                                ? (_openBlock(), _createBlock(_component_v_menu, { key: 0 }, {
+                                    activator: _withCtx(({ props }) => [
+                                      _createVNode(_component_v_btn, _mergeProps(props, {
+                                        variant: "text",
+                                        color: "error",
+                                        density: "comfortable",
+                                        size: "x-small",
+                                        class: "ml-2"
+                                      }), {
+                                        default: _withCtx(() => [
+                                          _cache[32] || (_cache[32] = _createTextVNode(" 批量操作 ")),
+                                          _createVNode(_component_v_icon, {
+                                            right: "",
+                                            size: "small"
+                                          }, {
+                                            default: _withCtx(() => _cache[31] || (_cache[31] = [
+                                              _createTextVNode("mdi-chevron-down")
+                                            ])),
+                                            _: 1
+                                          })
+                                        ]),
+                                        _: 2
+                                      }, 1040)
+                                    ]),
+                                    default: _withCtx(() => [
+                                      _createVNode(_component_v_list, { density: "compact" }, {
+                                        default: _withCtx(() => [
+                                          (logStatistics.deleted > 0)
+                                            ? (_openBlock(), _createBlock(_component_v_list_item, {
+                                                key: 0,
+                                                onClick: _cache[1] || (_cache[1] = $event => (showBatchDeleteConfirm('deleted'))),
+                                                "prepend-icon": "mdi-delete-sweep",
+                                                title: "清除所有已删除插件日志"
+                                              }))
+                                            : _createCommentVNode("", true),
+                                          (logStatistics.split > 0)
+                                            ? (_openBlock(), _createBlock(_component_v_list_item, {
+                                                key: 1,
+                                                onClick: _cache[2] || (_cache[2] = $event => (showBatchDeleteConfirm('split'))),
+                                                "prepend-icon": "mdi-file-multiple",
+                                                title: "清除所有分割日志文件"
+                                              }))
+                                            : _createCommentVNode("", true),
+                                          (logStatistics.deleted > 0 && logStatistics.split > 0)
+                                            ? (_openBlock(), _createBlock(_component_v_list_item, {
+                                                key: 2,
+                                                onClick: _cache[3] || (_cache[3] = $event => (showBatchDeleteConfirm('all'))),
+                                                "prepend-icon": "mdi-delete-alert",
+                                                title: "清除已删除插件和分割日志"
+                                              }))
+                                            : _createCommentVNode("", true)
+                                        ]),
+                                        _: 1
+                                      })
+                                    ]),
+                                    _: 1
+                                  }))
+                                : _createCommentVNode("", true)
                             ]),
                             _createVNode(_component_v_text_field, {
                               modelValue: pluginSearch.value,
-                              "onUpdate:modelValue": _cache[1] || (_cache[1] = $event => ((pluginSearch).value = $event)),
+                              "onUpdate:modelValue": _cache[4] || (_cache[4] = $event => ((pluginSearch).value = $event)),
                               density: "compact",
                               "hide-details": "",
                               placeholder: "搜索插件...",
@@ -1152,7 +1293,7 @@ return (_ctx, _cache) => {
                                   activator: "parent",
                                   location: "top"
                                 }, {
-                                  default: _withCtx(() => _cache[27] || (_cache[27] = [
+                                  default: _withCtx(() => _cache[33] || (_cache[33] = [
                                     _createTextVNode("刷新插件状态")
                                   ])),
                                   _: 1
@@ -1173,7 +1314,7 @@ return (_ctx, _cache) => {
                                   color: "primary",
                                   size: "20"
                                 }),
-                                _cache[28] || (_cache[28] = _createElementVNode("span", { class: "text-caption ml-2" }, "加载插件日志信息...", -1))
+                                _cache[34] || (_cache[34] = _createElementVNode("span", { class: "text-caption ml-2" }, "加载插件日志信息...", -1))
                               ]))
                             : (!installedPluginLogs.value.length)
                               ? (_openBlock(), _createElementBlock("div", _hoisted_24, [
@@ -1182,7 +1323,7 @@ return (_ctx, _cache) => {
                                     size: "small",
                                     class: "mb-1"
                                   }),
-                                  _cache[29] || (_cache[29] = _createElementVNode("div", { class: "text-caption" }, "未找到已安装插件的日志", -1))
+                                  _cache[35] || (_cache[35] = _createElementVNode("div", { class: "text-caption" }, "未找到已安装插件的日志", -1))
                                 ]))
                               : (_openBlock(), _createElementBlock("div", _hoisted_25, [
                                   _createVNode(_component_v_table, {
@@ -1191,7 +1332,7 @@ return (_ctx, _cache) => {
                                     class: "text-body-2"
                                   }, {
                                     default: _withCtx(() => [
-                                      _cache[35] || (_cache[35] = _createElementVNode("thead", null, [
+                                      _cache[41] || (_cache[41] = _createElementVNode("thead", null, [
                                         _createElementVNode("tr", null, [
                                           _createElementVNode("th", { class: "text-body-2 font-weight-bold" }, "插件名称"),
                                           _createElementVNode("th", { class: "text-body-2 font-weight-bold text-center" }, "日志大小"),
@@ -1220,7 +1361,7 @@ return (_ctx, _cache) => {
                                                         color: "grey-lighten-2",
                                                         class: "ml-1"
                                                       }, {
-                                                        default: _withCtx(() => _cache[30] || (_cache[30] = [
+                                                        default: _withCtx(() => _cache[36] || (_cache[36] = [
                                                           _createTextVNode("系统日志")
                                                         ])),
                                                         _: 1
@@ -1233,7 +1374,7 @@ return (_ctx, _cache) => {
                                                         color: "error-lighten-3",
                                                         class: "ml-1"
                                                       }, {
-                                                        default: _withCtx(() => _cache[31] || (_cache[31] = [
+                                                        default: _withCtx(() => _cache[37] || (_cache[37] = [
                                                           _createTextVNode("已删除插件")
                                                         ])),
                                                         _: 1
@@ -1246,7 +1387,7 @@ return (_ctx, _cache) => {
                                                         color: "warning-lighten-3",
                                                         class: "ml-1"
                                                       }, {
-                                                        default: _withCtx(() => _cache[32] || (_cache[32] = [
+                                                        default: _withCtx(() => _cache[38] || (_cache[38] = [
                                                           _createTextVNode("分割日志")
                                                         ])),
                                                         _: 1
@@ -1290,7 +1431,7 @@ return (_ctx, _cache) => {
                                                       activator: "parent",
                                                       location: "top"
                                                     }, {
-                                                      default: _withCtx(() => _cache[33] || (_cache[33] = [
+                                                      default: _withCtx(() => _cache[39] || (_cache[39] = [
                                                         _createTextVNode("清理此日志")
                                                       ])),
                                                       _: 1
@@ -1298,36 +1439,33 @@ return (_ctx, _cache) => {
                                                   ]),
                                                   _: 2
                                                 }, 1032, ["disabled", "loading", "onClick"]),
-                                                (isDeletedPluginLog(plugin.id) || isSplitLogFile(plugin.id))
-                                                  ? (_openBlock(), _createBlock(_component_v_btn, {
-                                                      key: 0,
-                                                      density: "comfortable",
-                                                      icon: "",
-                                                      variant: "text",
-                                                      color: "grey-darken-1",
-                                                      size: "small",
-                                                      disabled: deletingLogFile.value === plugin.id,
-                                                      loading: deletingLogFile.value === plugin.id,
-                                                      onClick: $event => (deleteLogFile(plugin.id, plugin.name))
+                                                _createVNode(_component_v_btn, {
+                                                  density: "comfortable",
+                                                  icon: "",
+                                                  variant: "text",
+                                                  color: "grey-darken-1",
+                                                  size: "small",
+                                                  disabled: deletingLogFile.value === plugin.id,
+                                                  loading: deletingLogFile.value === plugin.id,
+                                                  onClick: $event => (deleteLogFile(plugin.id, plugin.name))
+                                                }, {
+                                                  default: _withCtx(() => [
+                                                    _createVNode(_component_v_icon, {
+                                                      icon: "mdi-delete",
+                                                      size: "small"
+                                                    }),
+                                                    _createVNode(_component_v_tooltip, {
+                                                      activator: "parent",
+                                                      location: "top"
                                                     }, {
-                                                      default: _withCtx(() => [
-                                                        _createVNode(_component_v_icon, {
-                                                          icon: "mdi-delete",
-                                                          size: "small"
-                                                        }),
-                                                        _createVNode(_component_v_tooltip, {
-                                                          activator: "parent",
-                                                          location: "top"
-                                                        }, {
-                                                          default: _withCtx(() => _cache[34] || (_cache[34] = [
-                                                            _createTextVNode("删除日志文件")
-                                                          ])),
-                                                          _: 1
-                                                        })
-                                                      ]),
-                                                      _: 2
-                                                    }, 1032, ["disabled", "loading", "onClick"]))
-                                                  : _createCommentVNode("", true)
+                                                      default: _withCtx(() => _cache[40] || (_cache[40] = [
+                                                        _createTextVNode("删除此日志")
+                                                      ])),
+                                                      _: 1
+                                                    })
+                                                  ]),
+                                                  _: 2
+                                                }, 1032, ["disabled", "loading", "onClick"])
                                               ])
                                             ])
                                           ]))
@@ -1353,12 +1491,12 @@ return (_ctx, _cache) => {
           default: _withCtx(() => [
             _createVNode(_component_v_btn, {
               color: "primary",
-              onClick: _cache[2] || (_cache[2] = $event => (emit('switch'))),
+              onClick: _cache[5] || (_cache[5] = $event => (emit('switch'))),
               "prepend-icon": "mdi-cog",
               variant: "text",
               size: "small"
             }, {
-              default: _withCtx(() => _cache[36] || (_cache[36] = [
+              default: _withCtx(() => _cache[42] || (_cache[42] = [
                 _createTextVNode("配置")
               ])),
               _: 1
@@ -1372,7 +1510,7 @@ return (_ctx, _cache) => {
               variant: "text",
               size: "small"
             }, {
-              default: _withCtx(() => _cache[37] || (_cache[37] = [
+              default: _withCtx(() => _cache[43] || (_cache[43] = [
                 _createTextVNode("刷新状态")
               ])),
               _: 1
@@ -1386,19 +1524,19 @@ return (_ctx, _cache) => {
               variant: "text",
               size: "small"
             }, {
-              default: _withCtx(() => _cache[38] || (_cache[38] = [
+              default: _withCtx(() => _cache[44] || (_cache[44] = [
                 _createTextVNode(" 立即清理全部 ")
               ])),
               _: 1
             }, 8, ["loading", "disabled"]),
             _createVNode(_component_v_btn, {
               color: "grey",
-              onClick: _cache[3] || (_cache[3] = $event => (emit('close'))),
+              onClick: _cache[6] || (_cache[6] = $event => (emit('close'))),
               "prepend-icon": "mdi-close",
               variant: "text",
               size: "small"
             }, {
-              default: _withCtx(() => _cache[39] || (_cache[39] = [
+              default: _withCtx(() => _cache[45] || (_cache[45] = [
                 _createTextVNode("关闭")
               ])),
               _: 1
@@ -1411,7 +1549,7 @@ return (_ctx, _cache) => {
     }),
     _createVNode(_component_v_dialog, {
       modelValue: showHistoryDialog.value,
-      "onUpdate:modelValue": _cache[5] || (_cache[5] = $event => ((showHistoryDialog).value = $event)),
+      "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => ((showHistoryDialog).value = $event)),
       "max-width": "600px"
     }, {
       default: _withCtx(() => [
@@ -1424,7 +1562,7 @@ return (_ctx, _cache) => {
                   class: "mr-2",
                   color: "primary"
                 }),
-                _cache[40] || (_cache[40] = _createElementVNode("span", null, "清理历史记录", -1))
+                _cache[46] || (_cache[46] = _createElementVNode("span", null, "清理历史记录", -1))
               ]),
               _: 1
             }),
@@ -1445,7 +1583,7 @@ return (_ctx, _cache) => {
                           }, {
                             icon: _withCtx(() => [
                               _createVNode(_component_v_icon, { size: "x-small" }, {
-                                default: _withCtx(() => _cache[41] || (_cache[41] = [
+                                default: _withCtx(() => _cache[47] || (_cache[47] = [
                                   _createTextVNode("mdi-broom")
                                 ])),
                                 _: 1
@@ -1466,7 +1604,7 @@ return (_ctx, _cache) => {
                                 }, 1032, ["color"])
                               ]),
                               _createElementVNode("div", _hoisted_33, [
-                                _cache[42] || (_cache[42] = _createTextVNode(" 清理 ")),
+                                _cache[48] || (_cache[48] = _createTextVNode(" 清理 ")),
                                 _createElementVNode("strong", null, _toDisplayString(item.total_lines_cleaned), 1),
                                 _createTextVNode(" 行 (" + _toDisplayString(item.total_plugins_processed) + " 个插件) ", 1)
                               ])
@@ -1483,7 +1621,7 @@ return (_ctx, _cache) => {
                         color: "grey",
                         class: "mr-2"
                       }),
-                      _cache[43] || (_cache[43] = _createElementVNode("span", { class: "text-grey" }, "暂无清理历史记录", -1))
+                      _cache[49] || (_cache[49] = _createElementVNode("span", { class: "text-grey" }, "暂无清理历史记录", -1))
                     ]))
               ]),
               _: 1
@@ -1494,9 +1632,9 @@ return (_ctx, _cache) => {
                 _createVNode(_component_v_btn, {
                   variant: "text",
                   color: "primary",
-                  onClick: _cache[4] || (_cache[4] = $event => (showHistoryDialog.value = false))
+                  onClick: _cache[7] || (_cache[7] = $event => (showHistoryDialog.value = false))
                 }, {
-                  default: _withCtx(() => _cache[44] || (_cache[44] = [
+                  default: _withCtx(() => _cache[50] || (_cache[50] = [
                     _createTextVNode("关闭")
                   ])),
                   _: 1
@@ -1512,7 +1650,7 @@ return (_ctx, _cache) => {
     }, 8, ["modelValue"]),
     _createVNode(_component_v_dialog, {
       modelValue: showDeleteConfirmDialog.value,
-      "onUpdate:modelValue": _cache[7] || (_cache[7] = $event => ((showDeleteConfirmDialog).value = $event)),
+      "onUpdate:modelValue": _cache[10] || (_cache[10] = $event => ((showDeleteConfirmDialog).value = $event)),
       "max-width": "400"
     }, {
       default: _withCtx(() => [
@@ -1525,7 +1663,7 @@ return (_ctx, _cache) => {
                   class: "mr-2",
                   color: "error"
                 }),
-                _cache[45] || (_cache[45] = _createElementVNode("span", null, "确认删除", -1))
+                _cache[51] || (_cache[51] = _createElementVNode("span", null, "确认删除", -1))
               ]),
               _: 1
             }),
@@ -1541,9 +1679,9 @@ return (_ctx, _cache) => {
                 _createVNode(_component_v_btn, {
                   variant: "text",
                   color: "grey",
-                  onClick: _cache[6] || (_cache[6] = $event => (showDeleteConfirmDialog.value = false))
+                  onClick: _cache[9] || (_cache[9] = $event => (showDeleteConfirmDialog.value = false))
                 }, {
-                  default: _withCtx(() => _cache[46] || (_cache[46] = [
+                  default: _withCtx(() => _cache[52] || (_cache[52] = [
                     _createTextVNode("取消")
                   ])),
                   _: 1
@@ -1553,11 +1691,84 @@ return (_ctx, _cache) => {
                   color: "error",
                   onClick: confirmDeleteLogFile
                 }, {
-                  default: _withCtx(() => _cache[47] || (_cache[47] = [
+                  default: _withCtx(() => _cache[53] || (_cache[53] = [
                     _createTextVNode("确认删除")
                   ])),
                   _: 1
                 })
+              ]),
+              _: 1
+            })
+          ]),
+          _: 1
+        })
+      ]),
+      _: 1
+    }, 8, ["modelValue"]),
+    _createVNode(_component_v_dialog, {
+      modelValue: showBatchDeleteConfirmDialog.value,
+      "onUpdate:modelValue": _cache[11] || (_cache[11] = $event => ((showBatchDeleteConfirmDialog).value = $event)),
+      "max-width": "450"
+    }, {
+      default: _withCtx(() => [
+        _createVNode(_component_v_card, null, {
+          default: _withCtx(() => [
+            _createVNode(_component_v_card_title, { class: "text-subtitle-1 d-flex align-center px-4 py-3 bg-error-lighten-5 text-error" }, {
+              default: _withCtx(() => [
+                _createVNode(_component_v_icon, {
+                  icon: "mdi-alert",
+                  class: "mr-2",
+                  color: "error"
+                }),
+                _cache[54] || (_cache[54] = _createElementVNode("span", null, "批量删除确认", -1))
+              ]),
+              _: 1
+            }),
+            _createVNode(_component_v_card_text, { class: "pa-4" }, {
+              default: _withCtx(() => [
+                _createElementVNode("p", null, _toDisplayString(batchDeleteConfirmMessage.value), 1),
+                (batchDeleteType.value)
+                  ? (_openBlock(), _createBlock(_component_v_alert, {
+                      key: 0,
+                      type: "warning",
+                      density: "compact",
+                      variant: "tonal",
+                      class: "mt-2"
+                    }, {
+                      default: _withCtx(() => _cache[55] || (_cache[55] = [
+                        _createTextVNode(" 此操作无法撤销，请谨慎操作！ ")
+                      ])),
+                      _: 1
+                    }))
+                  : _createCommentVNode("", true)
+              ]),
+              _: 1
+            }),
+            _createVNode(_component_v_card_actions, { class: "px-4 py-3" }, {
+              default: _withCtx(() => [
+                _createVNode(_component_v_spacer),
+                _createVNode(_component_v_btn, {
+                  variant: "text",
+                  color: "grey",
+                  onClick: cancelBatchDelete
+                }, {
+                  default: _withCtx(() => _cache[56] || (_cache[56] = [
+                    _createTextVNode("取消")
+                  ])),
+                  _: 1
+                }),
+                _createVNode(_component_v_btn, {
+                  variant: "text",
+                  color: "error",
+                  onClick: confirmBatchDelete,
+                  loading: batchDeleting.value,
+                  disabled: batchDeleting.value
+                }, {
+                  default: _withCtx(() => _cache[57] || (_cache[57] = [
+                    _createTextVNode(" 确认删除 ")
+                  ])),
+                  _: 1
+                }, 8, ["loading", "disabled"])
               ]),
               _: 1
             })
@@ -1572,6 +1783,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const PageComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-372c9a2a"]]);
+const PageComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-df56df77"]]);
 
 export { PageComponent as default };
