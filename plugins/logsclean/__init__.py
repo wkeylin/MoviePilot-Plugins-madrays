@@ -19,6 +19,8 @@ from app.plugins import _PluginBase
 from app.schemas.types import SystemConfigKey
 from app.schemas import NotificationType
 
+import re
+
 
 # --- Add Pydantic model for config ---
 class LogsCleanConfig(BaseModel):
@@ -33,13 +35,13 @@ class LogsCleanConfig(BaseModel):
 # --- Plugin Class ---
 class LogsClean(_PluginBase):
     # 插件名称
-    plugin_name = "插件日志清理联邦版"
+    plugin_name = "日志清理vue"
     # 插件描述
     plugin_desc = "定时清理插件产生的日志"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/clean.png"
     # 插件版本
-    plugin_version = "1.2"
+    plugin_version = "2.0"
     # 插件作者
     plugin_author = "madrays"
     # 作者主页
@@ -293,8 +295,32 @@ class LogsClean(_PluginBase):
                 logger.warning(f"{self.plugin_name}: 插件日志目录不存在: {log_dir}")
                 return []
 
-            for log_file in log_dir.glob("*.log"):
-                plugin_id = log_file.stem  # 获取不带扩展名的文件名
+            # 扫描所有日志文件 - 同时包括 *.log 和 *.log.* 分割日志
+            all_log_files = []
+            # 首先获取所有标准日志文件
+            standard_logs = list(log_dir.glob("*.log"))
+            all_log_files.extend(standard_logs)
+            
+            # 获取所有分割日志文件
+            split_logs = list(log_dir.glob("*.log.*"))
+            all_log_files.extend(split_logs)
+            
+            logger.info(f"{self.plugin_name}: 找到 {len(standard_logs)} 个标准日志文件，{len(split_logs)} 个分割日志文件")
+
+            for log_file in all_log_files:
+                file_name = log_file.name
+                
+                # 判断是否为分割日志
+                is_split_log = bool(re.match(r"^.+\.log\.\d+$", file_name))
+                
+                if is_split_log:
+                    # 分割日志文件: 提取基础插件ID
+                    plugin_id = re.match(r"^(.+)\.log\.\d+$", file_name).group(1)
+                    original_id = plugin_id  # 保留原始ID以便后续使用
+                else:
+                    # 标准日志文件: 直接获取stem
+                    plugin_id = log_file.stem
+                    original_id = plugin_id
                 
                 # 获取文件大小
                 file_size = os.path.getsize(log_file)
@@ -322,20 +348,33 @@ class LogsClean(_PluginBase):
                 if not plugin_name:
                     plugin_name = plugin_id.capitalize()
                 
+                # 为分割日志文件添加序号标记
+                if is_split_log:
+                    split_num = re.match(r"^.+\.log\.(\d+)$", file_name).group(1)
+                    plugin_name = f"{plugin_name} (分割{split_num}号)"
+                
                 # 生成结果项
                 result.append({
-                    "id": plugin_id,
+                    "id": file_name.replace(".log", ""),  # 使用文件全名作为唯一ID
                     "name": plugin_name,
                     "size": file_size,
                     "lines_count": lines_count,
                     "path": str(log_file),
-                    "is_special": plugin_id.lower() in special_logs_map
+                    "is_special": plugin_id.lower() in special_logs_map,
+                    "is_split": is_split_log,
+                    "original_id": original_id,  # 存储原始插件ID
+                    "file_name": file_name  # 存储完整文件名
                 })
                 
-                logger.debug(f"{self.plugin_name}: 处理日志文件 {plugin_id} -> 名称: {plugin_name}, 大小: {file_size}, 行数: {lines_count}")
+                logger.debug(f"{self.plugin_name}: 处理日志文件 {file_name} -> 名称: {plugin_name}, 大小: {file_size}, 行数: {lines_count}, 是否分割: {is_split_log}")
             
-            # 按名称排序，但将特殊日志放在前面
-            result.sort(key=lambda x: (0 if x.get("is_special") else 1, x.get("name", "").lower()))
+            # 按名称排序，但将特殊日志放在前面，分割日志按序号排序
+            result.sort(key=lambda x: (
+                0 if x.get("is_special") else 1,  # 先特殊日志
+                x.get("original_id", "").lower(),  # 然后按插件ID
+                x.get("is_split", False),  # 先标准日志，后分割日志
+                x.get("file_name", "")  # 最后按文件名排序
+            ))
             
             logger.info(f"{self.plugin_name}: 获取插件日志信息完成，共 {len(result)} 个日志文件")
             return result
@@ -517,6 +556,81 @@ class LogsClean(_PluginBase):
             "cleaning_history": history
         }
 
+    # --- 删除指定日志文件 ---
+    def _delete_log_file(self, payload: dict) -> Dict[str, Any]:
+        """删除指定的日志文件"""
+        log_id = payload.get("log_id")
+        if not log_id:
+            return {"status": "error", "message": "未指定要删除的日志文件ID"}
+        
+        logger.info(f"{self.plugin_name}: 收到删除日志文件请求，日志ID: {log_id}")
+        
+        try:
+            # 确保日志目录存在
+            log_dir = settings.LOG_PATH / Path("plugins")
+            if not log_dir.exists():
+                return {"status": "error", "message": f"插件日志目录不存在: {log_dir}"}
+            
+            # 构建日志文件路径
+            log_path = log_dir / f"{log_id}.log"
+            
+            # 检查文件是否存在
+            if not log_path.exists():
+                return {"status": "error", "message": f"日志文件不存在: {log_path}"}
+            
+            # 删除文件
+            log_path.unlink()
+            logger.info(f"{self.plugin_name}: 已成功删除日志文件: {log_path}")
+            
+            return {
+                "status": "success", 
+                "message": f"已成功删除日志文件: {log_id}.log"
+            }
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 删除日志文件失败: {e}", exc_info=True)
+            return {"status": "error", "message": f"删除日志文件失败: {str(e)}"}
+
+    # --- 删除指定插件的所有分割日志文件 ---
+    def _delete_split_logs(self, payload: dict) -> Dict[str, Any]:
+        """删除指定插件的所有分割日志文件 (xxx.log.1, xxx.log.2等)"""
+        base_id = payload.get("base_id")
+        if not base_id:
+            return {"status": "error", "message": "未指定要删除的日志基础ID"}
+        
+        logger.info(f"{self.plugin_name}: 收到删除分割日志文件请求，基础ID: {base_id}")
+        
+        try:
+            # 确保日志目录存在
+            log_dir = settings.LOG_PATH / Path("plugins")
+            if not log_dir.exists():
+                return {"status": "error", "message": f"插件日志目录不存在: {log_dir}"}
+            
+            # 查找所有匹配的分割日志文件
+            pattern = f"{base_id}.log.*"
+            matching_files = list(log_dir.glob(pattern))
+            
+            if not matching_files:
+                return {"status": "warning", "message": f"未找到匹配的分割日志文件: {pattern}"}
+            
+            # 删除所有匹配的文件
+            deleted_count = 0
+            for log_path in matching_files:
+                try:
+                    log_path.unlink()
+                    deleted_count += 1
+                    logger.info(f"{self.plugin_name}: 已删除分割日志文件: {log_path}")
+                except Exception as e:
+                    logger.error(f"{self.plugin_name}: 删除分割日志文件失败: {log_path} - {e}")
+            
+            return {
+                "status": "success", 
+                "message": f"已成功删除 {deleted_count} 个分割日志文件",
+                "deleted_count": deleted_count
+            }
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 删除分割日志文件失败: {e}", exc_info=True)
+            return {"status": "error", "message": f"删除分割日志文件失败: {str(e)}"}
+
     # --- Abstract/Base Methods Implementation ---
     
     def get_form(self) -> Tuple[Optional[List[dict]], Dict[str, Any]]:
@@ -579,6 +693,20 @@ class LogsClean(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear", 
                 "summary": "清理指定插件日志"
+            },
+            {
+                "path": "/delete_log",
+                "endpoint": self._delete_log_file,
+                "methods": ["POST"],
+                "auth": "bear", 
+                "summary": "删除指定日志文件"
+            },
+            {
+                "path": "/delete_split_logs",
+                "endpoint": self._delete_split_logs,
+                "methods": ["POST"],
+                "auth": "bear", 
+                "summary": "删除指定插件的所有分割日志文件"
             }
         ]
 

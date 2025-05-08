@@ -145,35 +145,39 @@
               <div class="text-caption">暂无上次运行数据</div>
             </v-card-text>
             <v-card-text v-else class="pa-0">
-              <v-table density="compact" hover class="text-caption">
-                <thead>
-                  <tr>
-                    <th class="text-caption">插件名称</th>
-                    <th class="text-caption text-center">原行数</th>
-                    <th class="text-caption text-center">保留行数</th>
-                    <th class="text-caption text-center">清理行数</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(item, index) in statusData.last_run_results" :key="index">
-                    <td>
-                      <div class="d-flex align-center">
-                        <v-avatar size="18" class="mr-1" :color="getPluginColor(index)">
-                          <span class="text-white text-caption" style="font-size: 10px">{{ getPluginInitial(getPluginDisplayName(item.plugin_id)) }}</span>
-                        </v-avatar>
-                        {{ getPluginDisplayName(item.plugin_id) }}
-                      </div>
-                    </td>
-                    <td class="text-center">{{ item.original_lines }}</td>
-                    <td class="text-center">{{ item.kept_lines }}</td>
-                    <td class="text-center">
-                      <v-chip size="x-small" color="success" variant="flat">
-                        {{ item.cleaned_lines }}
-                      </v-chip>
-                    </td>
-                  </tr>
-                </tbody>
-              </v-table>
+              <div class="result-list-container">
+                <v-table density="compact" hover class="text-body-2">
+                  <thead>
+                    <tr>
+                      <th class="text-body-2 font-weight-bold">插件名称</th>
+                      <th class="text-body-2 font-weight-bold text-center">原行数</th>
+                      <th class="text-body-2 font-weight-bold text-center">保留行数</th>
+                      <th class="text-body-2 font-weight-bold text-center">清理行数</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(item, index) in statusData.last_run_results" :key="index">
+                      <td>
+                        <div class="d-flex align-center">
+                          <div class="plugin-avatar mr-2" :class="getPluginClass(item.plugin_id)">
+                            <span>{{ getPluginInitial(getPluginDisplayName(item.plugin_id)) }}</span>
+                          </div>
+                          <span :class="{ 'text-grey': isSpecialLog(item.plugin_id) || isDeletedPluginLog(item.plugin_id) }" class="plugin-name">
+                            {{ getPluginDisplayName(item.plugin_id) }}
+                          </span>
+                        </div>
+                      </td>
+                      <td class="text-center">{{ item.original_lines }}</td>
+                      <td class="text-center">{{ item.kept_lines }}</td>
+                      <td class="text-center">
+                        <v-chip size="small" color="success" variant="flat">
+                          {{ item.cleaned_lines }}
+                        </v-chip>
+                      </td>
+                    </tr>
+                  </tbody>
+                </v-table>
+              </div>
             </v-card-text>
           </v-card>
 
@@ -183,8 +187,21 @@
               <div class="d-flex align-center">
                 <v-icon icon="mdi-view-list" class="mr-2" color="primary" size="small" />
                 <span>插件日志状态</span>
+                <v-chip v-if="logStatistics.total > 0" size="x-small" color="info" variant="flat" class="ml-1">
+                  {{ logStatistics.total }}个日志
+                </v-chip>
               </div>
-              <div class="d-flex align-center">
+              <div class="d-flex align-center flex-wrap">
+                <div class="mr-2 d-flex align-center">
+                  <v-chip size="x-small" color="grey-lighten-2" class="mr-1">系统</v-chip>
+                  <span class="text-caption">{{ logStatistics.system }}</span>
+                  <v-divider vertical class="mx-1"></v-divider>
+                  <v-chip size="x-small" color="primary-lighten-3" class="mr-1">已安装</v-chip>
+                  <span class="text-caption">{{ logStatistics.installed }}</span>
+                  <v-divider vertical class="mx-1"></v-divider>
+                  <v-chip size="x-small" color="error-lighten-3" class="mr-1">已删除</v-chip>
+                  <span class="text-caption">{{ logStatistics.deleted }}</span>
+                </div>
                 <v-text-field
                   v-model="pluginSearch"
                   density="compact"
@@ -232,35 +249,54 @@
                     <tr v-for="(plugin, index) in filteredPluginLogs" :key="index">
                       <td>
                         <div class="d-flex align-center">
-                          <div class="plugin-avatar mr-2" :class="isSpecialLog(plugin.id) ? 'special-log' : `color-${index % 10}`">
+                          <div class="plugin-avatar mr-2" :class="getPluginClass(plugin.id)">
                             <span>{{ getPluginInitial(plugin.name) }}</span>
                           </div>
-                          <span :class="{ 'text-grey': isSpecialLog(plugin.id) }" class="plugin-name">
+                          <span :class="{ 'text-grey': isSpecialLog(plugin.id) || isDeletedPluginLog(plugin.id) }" class="plugin-name">
                             {{ plugin.name }} 
                             <v-chip v-if="isSpecialLog(plugin.id)" size="small" color="grey-lighten-2" class="ml-1">系统日志</v-chip>
+                            <v-chip v-if="isDeletedPluginLog(plugin.id)" size="small" color="error-lighten-3" class="ml-1">已删除插件</v-chip>
+                            <v-chip v-if="isSplitLogFile(plugin.id)" size="small" color="warning-lighten-3" class="ml-1">分割日志</v-chip>
                           </span>
                         </div>
                       </td>
                       <td class="text-center">
-                        <v-chip size="x-small" :color="getPluginSizeColor(plugin.size)" variant="flat">
+                        <v-chip size="small" :color="getPluginSizeColor(plugin.size)" variant="flat">
                           {{ formatFileSize(plugin.size) }}
                         </v-chip>
                       </td>
                       <td class="text-center">{{ plugin.lines_count }}</td>
                       <td class="text-right">
-                        <v-btn 
-                          density="comfortable" 
-                          icon 
-                          variant="text" 
-                          color="error"
-                          size="x-small"
-                          :disabled="!statusData.enabled || cleaningSpecificPlugin === plugin.id"
-                          :loading="cleaningSpecificPlugin === plugin.id"
-                          @click="cleanSpecificPlugin(plugin.id, plugin.name)"
-                        >
-                          <v-icon icon="mdi-broom" size="small"></v-icon>
-                          <v-tooltip activator="parent" location="top">清理此日志</v-tooltip>
-                        </v-btn>
+                        <div class="d-flex justify-end">
+                          <v-btn 
+                            density="comfortable" 
+                            icon 
+                            variant="text" 
+                            color="error"
+                            size="small"
+                            :disabled="!statusData.enabled || cleaningSpecificPlugin === plugin.id"
+                            :loading="cleaningSpecificPlugin === plugin.id"
+                            @click="cleanSpecificPlugin(plugin.id, plugin.name)"
+                            class="mr-1"
+                          >
+                            <v-icon icon="mdi-broom" size="small"></v-icon>
+                            <v-tooltip activator="parent" location="top">清理此日志</v-tooltip>
+                          </v-btn>
+                          <v-btn 
+                            v-if="isDeletedPluginLog(plugin.id) || isSplitLogFile(plugin.id)"
+                            density="comfortable" 
+                            icon 
+                            variant="text" 
+                            color="grey-darken-1"
+                            size="small"
+                            :disabled="deletingLogFile === plugin.id"
+                            :loading="deletingLogFile === plugin.id"
+                            @click="deleteLogFile(plugin.id, plugin.name)"
+                          >
+                            <v-icon icon="mdi-delete" size="small"></v-icon>
+                            <v-tooltip activator="parent" location="top">删除日志文件</v-tooltip>
+                          </v-btn>
+                        </div>
                       </td>
                     </tr>
                   </tbody>
@@ -334,6 +370,24 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- 添加删除日志文件的确认对话框 -->
+    <v-dialog v-model="showDeleteConfirmDialog" max-width="400">
+      <v-card>
+        <v-card-title class="text-subtitle-1 d-flex align-center px-4 py-3 bg-error-lighten-5 text-error">
+          <v-icon icon="mdi-alert" class="mr-2" color="error" />
+          <span>确认删除</span>
+        </v-card-title>
+        <v-card-text class="pa-4">
+          <p>确定要永久删除"{{ deletingLogName }}"的日志文件吗？此操作无法撤消。</p>
+        </v-card-text>
+        <v-card-actions class="px-4 py-3">
+          <v-spacer></v-spacer>
+          <v-btn variant="text" color="grey" @click="showDeleteConfirmDialog = false">取消</v-btn>
+          <v-btn variant="text" color="error" @click="confirmDeleteLogFile">确认删除</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -362,6 +416,15 @@ const pluginSearch = ref('');
 const installedPlugins = ref([]);
 const showHistoryDialog = ref(false);
 
+// 日志统计信息
+const logStatistics = reactive({
+  total: 0,
+  system: 0,
+  installed: 0,
+  deleted: 0,
+  split: 0
+});
+
 // 中文名称映射缓存
 const pluginNameMap = reactive({});
 
@@ -374,36 +437,15 @@ const statusData = reactive({
   cleaning_history: [],
 });
 
-// 已安装的插件日志列表
+// 已安装的插件日志列表（不再过滤，而是显示全部）
 const installedPluginLogs = computed(() => {
-  // 获取已安装插件ID列表
-  const installedIds = installedPlugins.value.map(p => p.toLowerCase());
-  
-  // 调试日志
-  console.log('已安装插件数量:', installedIds.length, '已安装插件ID:', installedIds);
+  // 记录调试信息
+  console.log('已安装插件数量:', installedPlugins.value.length, 
+              '已安装插件ID(原始大小写):', installedPlugins.value);
   console.log('日志列表总数量:', pluginLogsSizes.value.length);
   
-  // 过滤出已安装插件的日志，宽松匹配 - 只要ID包含在插件ID中即可
-  const result = pluginLogsSizes.value.filter(plugin => 
-    plugin && plugin.id && (
-      // 精确匹配插件ID
-      installedIds.includes(plugin.id.toLowerCase()) ||
-      // 通过判断日志ID是否是某个插件ID的一部分来匹配
-      installedIds.some(id => plugin.id.toLowerCase().includes(id)) ||
-      // 通过判断插件ID是否是某个日志ID的一部分来匹配
-      installedIds.some(id => id.includes(plugin.id.toLowerCase()))
-    )
-  );
-  
-  console.log('过滤后安装的插件日志数量:', result.length);
-  
-  // 确保即使没有安装插件匹配，也返回所有日志文件
-  if (result.length === 0 && pluginLogsSizes.value.length > 0) {
-    console.log('未找到匹配的已安装插件日志，返回所有日志文件');
-    return pluginLogsSizes.value;
-  }
-  
-  return result;
+  // 不再过滤，返回所有日志文件
+  return pluginLogsSizes.value;
 });
 
 // 过滤后的插件日志 - 基于搜索和已安装状态
@@ -523,22 +565,25 @@ async function loadInstalledPlugins() {
     const data = await props.api.get(`plugin/${pluginId}/installed_plugins`);
     
     if (Array.isArray(data)) {
-      // 获取已安装插件ID(所有都转为小写)
-      installedPlugins.value = data.map(plugin => plugin.value?.toLowerCase()).filter(Boolean);
+      // 获取已安装插件ID(保持原始大小写)
+      installedPlugins.value = data
+        .map(plugin => typeof plugin === 'object' && plugin.value ? plugin.value : 
+                       typeof plugin === 'string' ? plugin : null)
+        .filter(Boolean);
       
       // 同时更新名称映射（title是中文名称）
       data.forEach(plugin => {
-        if (plugin.value && plugin.title) {
+        if (typeof plugin === 'object' && plugin.value && plugin.title) {
           // 提取中文名（去掉版本号）
           const match = plugin.title.match(/^(.*?)(?:\sv|$)/);
           const chineseName = match ? match[1].trim() : plugin.title;
           
-          // 同时以原始ID和小写ID为键存储中文名
+          // 存储中文名（保持原始大小写的ID）
           pluginNameMap[plugin.value] = chineseName;
-          pluginNameMap[plugin.value.toLowerCase()] = chineseName;
         }
       });
       
+      console.log('已加载插件ID列表(原始大小写):', installedPlugins.value);
       console.log('已加载插件名称映射:', Object.keys(pluginNameMap).length);
     }
   } catch (err) {
@@ -560,7 +605,7 @@ async function fetchStatusData() {
   }
 
   try {
-    // 正确的API路径，不含/api/v1/前缀
+    // 修正API路径，确保正确的格式
     const data = await props.api.get(`plugin/${pluginId}/status`);
     
     if (data) {
@@ -633,6 +678,9 @@ async function loadPluginLogsSizes() {
       
       // 更新名称映射，记录调试信息
       console.log('加载到插件日志信息:', data.length, '个');
+      
+      // 更新统计信息
+      updateLogStatistics();
       
       let updatedMappings = 0;
       data.forEach(plugin => {
@@ -724,14 +772,199 @@ function isSpecialLog(pluginId) {
   const specialLogs = ['plugin', 'system', 'main', 'error'];
   const normalizedId = pluginId.toLowerCase();
   
-  // 检查是否是特殊日志
-  return specialLogs.includes(normalizedId) || 
-    // 检查插件ID是否存在于已安装插件中
-    !installedPlugins.value.some(id => 
-      id && normalizedId === id.toLowerCase() || 
-      normalizedId.includes(id.toLowerCase()) ||
-      id.toLowerCase().includes(normalizedId)
-    );
+  // 检查是否是特殊日志（只检查系统日志列表）
+  return specialLogs.includes(normalizedId);
+}
+
+// 判断是否是已删除插件的日志文件 - 改进识别逻辑
+function isDeletedPluginLog(pluginId) {
+  if (!pluginId) return false;
+  
+  // 如果是特殊系统日志，不是已删除插件
+  if (isSpecialLog(pluginId)) return false;
+  
+  // 获取插件对象
+  const plugin = pluginLogsSizes.value.find(p => p.id === pluginId);
+  if (!plugin) return false;
+  
+  // 使用后端提供的原始ID
+  let basePluginId = plugin.original_id || pluginId;
+  
+  // 检查是否不在已安装插件列表中
+  if (!installedPlugins.value || installedPlugins.value.length === 0) {
+    return false; // 如果没有安装插件数据，不做判断
+  }
+  
+  // 支持大小写不敏感和部分匹配，避免误判
+  const isInstalled = installedPlugins.value.some(installedId => {
+    if (!installedId) return false;
+    
+    // 大小写不敏感的比较
+    const normalizedBaseId = basePluginId.toLowerCase();
+    const normalizedInstalledId = installedId.toLowerCase();
+    
+    // 精确匹配（优先考虑）
+    if (normalizedBaseId === normalizedInstalledId) {
+      return true;
+    }
+    
+    // 部分匹配检查（次要考虑）
+    return normalizedBaseId.includes(normalizedInstalledId) ||
+           normalizedInstalledId.includes(normalizedBaseId);
+  });
+  
+  // 不在已安装列表中，则认为是已删除的插件
+  return !isInstalled;
+}
+
+// 判断是否是分割日志文件
+function isSplitLogFile(pluginId) {
+  if (!pluginId) return false;
+  
+  // 通过is_split字段判断，或通过文件名匹配模式判断
+  const plugin = pluginLogsSizes.value.find(p => p.id === pluginId);
+  if (plugin && plugin.is_split !== undefined) {
+    return plugin.is_split;
+  }
+  
+  // 兼容方式：通过文件名格式判断
+  return Boolean(pluginId.match(/^.+?\.log\.\d+$/) || pluginId.match(/^.+?\.\d+$/));
+}
+
+// 获取分割日志的基础ID
+function getBaseSplitLogId(pluginId) {
+  const match = pluginId.match(/^(.+?)\.log\.\d+$/);
+  return match ? match[1] : pluginId;
+}
+
+// 获取插件的CSS类名
+function getPluginClass(pluginId) {
+  if (!pluginId) return 'color-grey';
+  
+  if (isSpecialLog(pluginId)) {
+    return 'special-log';
+  }
+  
+  if (isDeletedPluginLog(pluginId)) {
+    return 'deleted-log';
+  }
+  
+  // 使用有限的几种颜色，确保可见
+  const safeColors = ['color-primary', 'color-success', 'color-info', 'color-error', 'color-warning'];
+  const hash = pluginId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return safeColors[hash % safeColors.length];
+}
+
+// 删除日志文件相关变量和函数
+const deletingLogFile = ref(null);
+const deletingLogName = ref('');
+const showDeleteConfirmDialog = ref(false);
+
+// 显示删除确认对话框
+function deleteLogFile(pluginId, pluginName) {
+  deletingLogFile.value = pluginId;
+  deletingLogName.value = pluginName || pluginId;
+  showDeleteConfirmDialog.value = true;
+}
+
+// 确认删除日志文件
+async function confirmDeleteLogFile() {
+  try {
+    const pluginId = getPluginId();
+    
+    if (!deletingLogFile.value) {
+      throw new Error('未指定要删除的日志文件');
+    }
+    
+    const data = await props.api.post(`plugin/${pluginId}/delete_log`, { 
+      log_id: deletingLogFile.value 
+    });
+    
+    if (data) {
+      if (data.error) {
+        throw new Error(data.message || '删除日志文件时发生错误');
+      }
+      
+      actionMessage.value = `已成功删除 "${deletingLogName.value}" 的日志文件`;
+      actionMessageType.value = 'success';
+      
+      // 刷新插件日志列表
+      setTimeout(() => loadPluginLogsSizes(), 1000);
+    } else {
+      throw new Error('删除请求无响应');
+    }
+  } catch (err) {
+    console.error(`删除日志文件失败:`, err);
+    error.value = `删除 "${deletingLogName.value}" 日志文件失败: ${err.message || '未知错误'}`;
+    actionMessageType.value = 'error';
+  } finally {
+    deletingLogFile.value = null;
+    showDeleteConfirmDialog.value = false;
+    setTimeout(() => { actionMessage.value = null; }, 5000);
+  }
+}
+
+// 添加删除所有相关分割日志的函数
+async function deleteSplitLogs(baseId) {
+  try {
+    const pluginId = getPluginId();
+    
+    // 构建请求参数
+    const data = await props.api.post(`plugin/${pluginId}/delete_split_logs`, { 
+      base_id: baseId 
+    });
+    
+    if (data) {
+      if (data.error) {
+        throw new Error(data.message || '删除分割日志文件时发生错误');
+      }
+      
+      actionMessage.value = `已成功删除 "${baseId}" 的所有分割日志文件`;
+      actionMessageType.value = 'success';
+      
+      // 刷新插件日志列表
+      setTimeout(() => loadPluginLogsSizes(), 1000);
+    } else {
+      throw new Error('删除请求无响应');
+    }
+  } catch (err) {
+    console.error(`删除分割日志文件失败:`, err);
+    error.value = `删除 "${baseId}" 的分割日志文件失败: ${err.message || '未知错误'}`;
+    actionMessageType.value = 'error';
+  } finally {
+    setTimeout(() => { actionMessage.value = null; }, 5000);
+  }
+}
+
+// 添加统计功能
+function updateLogStatistics() {
+  // 重置统计
+  logStatistics.total = pluginLogsSizes.value.length;
+  logStatistics.system = 0;
+  logStatistics.installed = 0;
+  logStatistics.deleted = 0;
+  logStatistics.split = 0;
+  
+  // 统计各类日志
+  pluginLogsSizes.value.forEach(plugin => {
+    // 检查分割日志
+    if (isSplitLogFile(plugin.id)) {
+      logStatistics.split++;
+    }
+    
+    // 检查系统日志
+    if (isSpecialLog(plugin.id)) {
+      logStatistics.system++;
+    } 
+    // 检查已删除插件日志
+    else if (isDeletedPluginLog(plugin.id)) {
+      logStatistics.deleted++;
+    } 
+    // 其余为已安装插件日志
+    else {
+      logStatistics.installed++;
+    }
+  });
 }
 
 // Fetch initial data when component is mounted
@@ -785,67 +1018,65 @@ onMounted(() => {
   font-size: 14px !important;
 }
 
-.plugin-list-container {
-  max-height: 400px;
+.plugin-list-container, .result-list-container {
+  max-height: 200px;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
-.plugin-list-container::-webkit-scrollbar {
-  width: 6px;
+/* 统一滚动条样式 */
+.plugin-list-container::-webkit-scrollbar,
+.result-list-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 
-.plugin-list-container::-webkit-scrollbar-track {
-  background: rgba(var(--v-theme-surface), 0.6);
+.plugin-list-container::-webkit-scrollbar-track,
+.result-list-container::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.plugin-list-container::-webkit-scrollbar-thumb {
-  background-color: rgba(var(--v-theme-primary), 0.3);
-  border-radius: 6px;
+.plugin-list-container::-webkit-scrollbar-thumb,
+.result-list-container::-webkit-scrollbar-thumb {
+  background-color: rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 4px;
 }
 
+.plugin-list-container::-webkit-scrollbar-thumb:hover,
+.result-list-container::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(var(--v-theme-on-surface), 0.2);
+}
+
+/* 优化的颜色类 */
 .special-log {
-  background-color: rgba(128, 128, 128, 0.9);
+  background-color: #9e9e9e;
 }
 
-.color-0 {
-  background-color: rgba(var(--v-theme-primary), 1);
+.deleted-log {
+  background-color: #ef5350;
 }
 
-.color-1 {
-  background-color: rgba(var(--v-theme-success), 1);
+.color-primary {
+  background-color: #1976d2;
 }
 
-.color-2 {
-  background-color: rgba(var(--v-theme-indigo), 1);
+.color-success {
+  background-color: #4caf50;
 }
 
-.color-3 {
-  background-color: rgba(var(--v-theme-deep-purple), 1);
+.color-info {
+  background-color: #2196f3;
 }
 
-.color-4 {
-  background-color: rgba(var(--v-theme-teal), 1);
+.color-warning {
+  background-color: #ff9800;
 }
 
-.color-5 {
-  background-color: rgba(var(--v-theme-cyan), 1);
+.color-error {
+  background-color: #f44336;
 }
 
-.color-6 {
-  background-color: rgba(var(--v-theme-amber-darken-2), 1);
-}
-
-.color-7 {
-  background-color: rgba(var(--v-theme-blue), 1);
-}
-
-.color-8 {
-  background-color: rgba(var(--v-theme-error), 1);
-}
-
-.color-9 {
-  background-color: rgba(var(--v-theme-deep-orange), 1);
+.color-grey {
+  background-color: #9e9e9e;
 }
 
 .config-card {
