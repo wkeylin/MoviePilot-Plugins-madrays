@@ -1,0 +1,12 @@
+
+.plugin-config[data-v-4e83ae4f] {
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 0.5rem;
+}
+.bg-primary-lighten-5[data-v-4e83ae4f] {
+  background-color: rgba(var(--v-theme-primary), 0.07);
+}
+.border[data-v-4e83ae4f] {
+  border: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+}

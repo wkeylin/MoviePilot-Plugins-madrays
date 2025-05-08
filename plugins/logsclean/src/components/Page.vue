@@ -288,7 +288,7 @@ import { ref, reactive, onMounted, computed } from 'vue';
 
 const props = defineProps({
   api: {
-    type: Object,
+    type: [Object, Function],
     required: true,
   }
 });

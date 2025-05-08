@@ -187,7 +187,7 @@ import Cronstrue from 'cronstrue/i18n';
 
 const props = defineProps({
   api: { 
-    type: Object,
+    type: [Object, Function],
     required: true,
   },
   initialConfig: {
