@@ -114,13 +114,13 @@
     "name": "插件日志清理联邦版",
     "description": "定时清理插件产生的日志",
     "labels": "日志,清理,工具",
-    "version": "1.1",
+    "version": "1.2",
     "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/clean.png",
     "author": "madrays",
     "level": 1,
     "v2": true,
     "history": {
-      "v1.1": "联邦插件重制，仅支持MPv2.4.5版本以上，低版本请勿更新",
+      "v1.2": "联邦插件重制，仅支持MPv2.4.5版本以上，低版本请勿更新",
       "v1.0": "首次发布重制版，修复插件列表错误，增加页面和通知"
     }
   }

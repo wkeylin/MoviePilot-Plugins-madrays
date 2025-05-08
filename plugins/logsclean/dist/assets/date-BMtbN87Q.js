@@ -1,419 +1,4 @@
-const buildIdentifier = "[0-9A-Za-z-]+";
-const build = `(?:\\+(${buildIdentifier}(?:\\.${buildIdentifier})*))`;
-const numericIdentifier = "0|[1-9]\\d*";
-const numericIdentifierLoose = "[0-9]+";
-const nonNumericIdentifier = "\\d*[a-zA-Z-][a-zA-Z0-9-]*";
-const preReleaseIdentifierLoose = `(?:${numericIdentifierLoose}|${nonNumericIdentifier})`;
-const preReleaseLoose = `(?:-?(${preReleaseIdentifierLoose}(?:\\.${preReleaseIdentifierLoose})*))`;
-const preReleaseIdentifier = `(?:${numericIdentifier}|${nonNumericIdentifier})`;
-const preRelease = `(?:-(${preReleaseIdentifier}(?:\\.${preReleaseIdentifier})*))`;
-const xRangeIdentifier = `${numericIdentifier}|x|X|\\*`;
-const xRangePlain = `[v=\\s]*(${xRangeIdentifier})(?:\\.(${xRangeIdentifier})(?:\\.(${xRangeIdentifier})(?:${preRelease})?${build}?)?)?`;
-const hyphenRange = `^\\s*(${xRangePlain})\\s+-\\s+(${xRangePlain})\\s*$`;
-const mainVersionLoose = `(${numericIdentifierLoose})\\.(${numericIdentifierLoose})\\.(${numericIdentifierLoose})`;
-const loosePlain = `[v=\\s]*${mainVersionLoose}${preReleaseLoose}?${build}?`;
-const gtlt = "((?:<|>)?=?)";
-const comparatorTrim = `(\\s*)${gtlt}\\s*(${loosePlain}|${xRangePlain})`;
-const loneTilde = "(?:~>?)";
-const tildeTrim = `(\\s*)${loneTilde}\\s+`;
-const loneCaret = "(?:\\^)";
-const caretTrim = `(\\s*)${loneCaret}\\s+`;
-const star = "(<|>)?=?\\s*\\*";
-const caret = `^${loneCaret}${xRangePlain}$`;
-const mainVersion = `(${numericIdentifier})\\.(${numericIdentifier})\\.(${numericIdentifier})`;
-const fullPlain = `v?${mainVersion}${preRelease}?${build}?`;
-const tilde = `^${loneTilde}${xRangePlain}$`;
-const xRange = `^${gtlt}\\s*${xRangePlain}$`;
-const comparator = `^${gtlt}\\s*(${fullPlain})$|^$`;
-const gte0 = "^\\s*>=\\s*0.0.0\\s*$";
-function parseRegex(source) {
-  return new RegExp(source);
-}
-function isXVersion(version) {
-  return !version || version.toLowerCase() === "x" || version === "*";
-}
-function pipe(...fns) {
-  return (x) => {
-    return fns.reduce((v, f) => f(v), x);
-  };
-}
-function extractComparator(comparatorString) {
-  return comparatorString.match(parseRegex(comparator));
-}
-function combineVersion(major, minor, patch, preRelease2) {
-  const mainVersion2 = `${major}.${minor}.${patch}`;
-  if (preRelease2) {
-    return `${mainVersion2}-${preRelease2}`;
-  }
-  return mainVersion2;
-}
-function parseHyphen(range) {
-  return range.replace(
-    parseRegex(hyphenRange),
-    (_range, from, fromMajor, fromMinor, fromPatch, _fromPreRelease, _fromBuild, to, toMajor, toMinor, toPatch, toPreRelease) => {
-      if (isXVersion(fromMajor)) {
-        from = "";
-      } else if (isXVersion(fromMinor)) {
-        from = `>=${fromMajor}.0.0`;
-      } else if (isXVersion(fromPatch)) {
-        from = `>=${fromMajor}.${fromMinor}.0`;
-      } else {
-        from = `>=${from}`;
-      }
-      if (isXVersion(toMajor)) {
-        to = "";
-      } else if (isXVersion(toMinor)) {
-        to = `<${+toMajor + 1}.0.0-0`;
-      } else if (isXVersion(toPatch)) {
-        to = `<${toMajor}.${+toMinor + 1}.0-0`;
-      } else if (toPreRelease) {
-        to = `<=${toMajor}.${toMinor}.${toPatch}-${toPreRelease}`;
-      } else {
-        to = `<=${to}`;
-      }
-      return `${from} ${to}`.trim();
-    }
-  );
-}
-function parseComparatorTrim(range) {
-  return range.replace(parseRegex(comparatorTrim), "$1$2$3");
-}
-function parseTildeTrim(range) {
-  return range.replace(parseRegex(tildeTrim), "$1~");
-}
-function parseCaretTrim(range) {
-  return range.replace(parseRegex(caretTrim), "$1^");
-}
-function parseCarets(range) {
-  return range.trim().split(/\s+/).map((rangeVersion) => {
-    return rangeVersion.replace(
-      parseRegex(caret),
-      (_, major, minor, patch, preRelease2) => {
-        if (isXVersion(major)) {
-          return "";
-        } else if (isXVersion(minor)) {
-          return `>=${major}.0.0 <${+major + 1}.0.0-0`;
-        } else if (isXVersion(patch)) {
-          if (major === "0") {
-            return `>=${major}.${minor}.0 <${major}.${+minor + 1}.0-0`;
-          } else {
-            return `>=${major}.${minor}.0 <${+major + 1}.0.0-0`;
-          }
-        } else if (preRelease2) {
-          if (major === "0") {
-            if (minor === "0") {
-              return `>=${major}.${minor}.${patch}-${preRelease2} <${major}.${minor}.${+patch + 1}-0`;
-            } else {
-              return `>=${major}.${minor}.${patch}-${preRelease2} <${major}.${+minor + 1}.0-0`;
-            }
-          } else {
-            return `>=${major}.${minor}.${patch}-${preRelease2} <${+major + 1}.0.0-0`;
-          }
-        } else {
-          if (major === "0") {
-            if (minor === "0") {
-              return `>=${major}.${minor}.${patch} <${major}.${minor}.${+patch + 1}-0`;
-            } else {
-              return `>=${major}.${minor}.${patch} <${major}.${+minor + 1}.0-0`;
-            }
-          }
-          return `>=${major}.${minor}.${patch} <${+major + 1}.0.0-0`;
-        }
-      }
-    );
-  }).join(" ");
-}
-function parseTildes(range) {
-  return range.trim().split(/\s+/).map((rangeVersion) => {
-    return rangeVersion.replace(
-      parseRegex(tilde),
-      (_, major, minor, patch, preRelease2) => {
-        if (isXVersion(major)) {
-          return "";
-        } else if (isXVersion(minor)) {
-          return `>=${major}.0.0 <${+major + 1}.0.0-0`;
-        } else if (isXVersion(patch)) {
-          return `>=${major}.${minor}.0 <${major}.${+minor + 1}.0-0`;
-        } else if (preRelease2) {
-          return `>=${major}.${minor}.${patch}-${preRelease2} <${major}.${+minor + 1}.0-0`;
-        }
-        return `>=${major}.${minor}.${patch} <${major}.${+minor + 1}.0-0`;
-      }
-    );
-  }).join(" ");
-}
-function parseXRanges(range) {
-  return range.split(/\s+/).map((rangeVersion) => {
-    return rangeVersion.trim().replace(
-      parseRegex(xRange),
-      (ret, gtlt2, major, minor, patch, preRelease2) => {
-        const isXMajor = isXVersion(major);
-        const isXMinor = isXMajor || isXVersion(minor);
-        const isXPatch = isXMinor || isXVersion(patch);
-        if (gtlt2 === "=" && isXPatch) {
-          gtlt2 = "";
-        }
-        preRelease2 = "";
-        if (isXMajor) {
-          if (gtlt2 === ">" || gtlt2 === "<") {
-            return "<0.0.0-0";
-          } else {
-            return "*";
-          }
-        } else if (gtlt2 && isXPatch) {
-          if (isXMinor) {
-            minor = 0;
-          }
-          patch = 0;
-          if (gtlt2 === ">") {
-            gtlt2 = ">=";
-            if (isXMinor) {
-              major = +major + 1;
-              minor = 0;
-              patch = 0;
-            } else {
-              minor = +minor + 1;
-              patch = 0;
-            }
-          } else if (gtlt2 === "<=") {
-            gtlt2 = "<";
-            if (isXMinor) {
-              major = +major + 1;
-            } else {
-              minor = +minor + 1;
-            }
-          }
-          if (gtlt2 === "<") {
-            preRelease2 = "-0";
-          }
-          return `${gtlt2 + major}.${minor}.${patch}${preRelease2}`;
-        } else if (isXMinor) {
-          return `>=${major}.0.0${preRelease2} <${+major + 1}.0.0-0`;
-        } else if (isXPatch) {
-          return `>=${major}.${minor}.0${preRelease2} <${major}.${+minor + 1}.0-0`;
-        }
-        return ret;
-      }
-    );
-  }).join(" ");
-}
-function parseStar(range) {
-  return range.trim().replace(parseRegex(star), "");
-}
-function parseGTE0(comparatorString) {
-  return comparatorString.trim().replace(parseRegex(gte0), "");
-}
-function compareAtom(rangeAtom, versionAtom) {
-  rangeAtom = +rangeAtom || rangeAtom;
-  versionAtom = +versionAtom || versionAtom;
-  if (rangeAtom > versionAtom) {
-    return 1;
-  }
-  if (rangeAtom === versionAtom) {
-    return 0;
-  }
-  return -1;
-}
-function comparePreRelease(rangeAtom, versionAtom) {
-  const { preRelease: rangePreRelease } = rangeAtom;
-  const { preRelease: versionPreRelease } = versionAtom;
-  if (rangePreRelease === void 0 && !!versionPreRelease) {
-    return 1;
-  }
-  if (!!rangePreRelease && versionPreRelease === void 0) {
-    return -1;
-  }
-  if (rangePreRelease === void 0 && versionPreRelease === void 0) {
-    return 0;
-  }
-  for (let i = 0, n = rangePreRelease.length; i <= n; i++) {
-    const rangeElement = rangePreRelease[i];
-    const versionElement = versionPreRelease[i];
-    if (rangeElement === versionElement) {
-      continue;
-    }
-    if (rangeElement === void 0 && versionElement === void 0) {
-      return 0;
-    }
-    if (!rangeElement) {
-      return 1;
-    }
-    if (!versionElement) {
-      return -1;
-    }
-    return compareAtom(rangeElement, versionElement);
-  }
-  return 0;
-}
-function compareVersion(rangeAtom, versionAtom) {
-  return compareAtom(rangeAtom.major, versionAtom.major) || compareAtom(rangeAtom.minor, versionAtom.minor) || compareAtom(rangeAtom.patch, versionAtom.patch) || comparePreRelease(rangeAtom, versionAtom);
-}
-function eq(rangeAtom, versionAtom) {
-  return rangeAtom.version === versionAtom.version;
-}
-function compare(rangeAtom, versionAtom) {
-  switch (rangeAtom.operator) {
-    case "":
-    case "=":
-      return eq(rangeAtom, versionAtom);
-    case ">":
-      return compareVersion(rangeAtom, versionAtom) < 0;
-    case ">=":
-      return eq(rangeAtom, versionAtom) || compareVersion(rangeAtom, versionAtom) < 0;
-    case "<":
-      return compareVersion(rangeAtom, versionAtom) > 0;
-    case "<=":
-      return eq(rangeAtom, versionAtom) || compareVersion(rangeAtom, versionAtom) > 0;
-    case void 0: {
-      return true;
-    }
-    default:
-      return false;
-  }
-}
-function parseComparatorString(range) {
-  return pipe(
-    parseCarets,
-    parseTildes,
-    parseXRanges,
-    parseStar
-  )(range);
-}
-function parseRange(range) {
-  return pipe(
-    parseHyphen,
-    parseComparatorTrim,
-    parseTildeTrim,
-    parseCaretTrim
-  )(range.trim()).split(/\s+/).join(" ");
-}
-function satisfy(version, range) {
-  if (!version) {
-    return false;
-  }
-  const parsedRange = parseRange(range);
-  const parsedComparator = parsedRange.split(" ").map((rangeVersion) => parseComparatorString(rangeVersion)).join(" ");
-  const comparators = parsedComparator.split(/\s+/).map((comparator2) => parseGTE0(comparator2));
-  const extractedVersion = extractComparator(version);
-  if (!extractedVersion) {
-    return false;
-  }
-  const [
-    ,
-    versionOperator,
-    ,
-    versionMajor,
-    versionMinor,
-    versionPatch,
-    versionPreRelease
-  ] = extractedVersion;
-  const versionAtom = {
-    version: combineVersion(
-      versionMajor,
-      versionMinor,
-      versionPatch,
-      versionPreRelease
-    ),
-    major: versionMajor,
-    minor: versionMinor,
-    patch: versionPatch,
-    preRelease: versionPreRelease == null ? void 0 : versionPreRelease.split(".")
-  };
-  for (const comparator2 of comparators) {
-    const extractedComparator = extractComparator(comparator2);
-    if (!extractedComparator) {
-      return false;
-    }
-    const [
-      ,
-      rangeOperator,
-      ,
-      rangeMajor,
-      rangeMinor,
-      rangePatch,
-      rangePreRelease
-    ] = extractedComparator;
-    const rangeAtom = {
-      operator: rangeOperator,
-      version: combineVersion(
-        rangeMajor,
-        rangeMinor,
-        rangePatch,
-        rangePreRelease
-      ),
-      major: rangeMajor,
-      minor: rangeMinor,
-      patch: rangePatch,
-      preRelease: rangePreRelease == null ? void 0 : rangePreRelease.split(".")
-    };
-    if (!compare(rangeAtom, versionAtom)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// eslint-disable-next-line no-undef
-const moduleMap = {};
-const moduleCache = Object.create(null);
-async function importShared(name, shareScope = 'default') {
-  return moduleCache[name]
-    ? new Promise((r) => r(moduleCache[name]))
-    : (await getSharedFromRuntime(name, shareScope)) || getSharedFromLocal(name)
-}
-async function getSharedFromRuntime(name, shareScope) {
-  let module = null;
-  if (globalThis?.__federation_shared__?.[shareScope]?.[name]) {
-    const versionObj = globalThis.__federation_shared__[shareScope][name];
-    const requiredVersion = moduleMap[name]?.requiredVersion;
-    const hasRequiredVersion = !!requiredVersion;
-    if (hasRequiredVersion) {
-      const versionKey = Object.keys(versionObj).find((version) =>
-        satisfy(version, requiredVersion)
-      );
-      if (versionKey) {
-        const versionValue = versionObj[versionKey];
-        module = await (await versionValue.get())();
-      } else {
-        console.log(
-          `provider support ${name}(${versionKey}) is not satisfied requiredVersion(\${moduleMap[name].requiredVersion})`
-        );
-      }
-    } else {
-      const versionKey = Object.keys(versionObj)[0];
-      const versionValue = versionObj[versionKey];
-      module = await (await versionValue.get())();
-    }
-  }
-  if (module) {
-    return flattenModule(module, name)
-  }
-}
-async function getSharedFromLocal(name) {
-  if (moduleMap[name]?.import) {
-    let module = await (await moduleMap[name].get())();
-    return flattenModule(module, name)
-  } else {
-    console.error(
-      `consumer config import=false,so cant use callback shared module`
-    );
-  }
-}
-function flattenModule(module, name) {
-  // use a shared module which export default a function will getting error 'TypeError: xxx is not a function'
-  if (typeof module.default === 'function') {
-    Object.keys(module).forEach((key) => {
-      if (key !== 'default') {
-        module.default[key] = module[key];
-      }
-    });
-    moduleCache[name] = module.default;
-    return module.default
-  }
-  if (module.default) module = Object.assign({}, module.default, module);
-  moduleCache[name] = module;
-  return module
-}
+import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 
 // Types
 // eslint-disable-line vue/prefer-import-from-vue
@@ -473,16 +58,6 @@ function propsFactory(props, source) {
 
 // Copied from Vue
 
-// Utilities
-// Composables
-const makeComponentProps = propsFactory({
-  class: [String, Array, Object],
-  style: {
-    type: [String, Array, Object],
-    default: null
-  }
-}, 'component');
-
 const IN_BROWSER = typeof window !== 'undefined';
 const SUPPORTS_INTERSECTION = IN_BROWSER && 'IntersectionObserver' in window;
 const SUPPORTS_TOUCH = IN_BROWSER && ('ontouchstart' in window || window.navigator.maxTouchPoints > 0);
@@ -494,7 +69,7 @@ function _classPrivateFieldSet(s, a, r) { return s.set(_assertClassBrand(s, a), 
 function _classPrivateFieldGet(s, a) { return s.get(_assertClassBrand(s, a)); }
 function _assertClassBrand(e, t, n) { if ("function" == typeof e ? e === t : e.has(t)) return arguments.length < 3 ? t : n; throw new TypeError("Private element is not present on this object"); }
 // Utilities
-const {capitalize: capitalize$1,Comment,Fragment,isVNode,reactive: reactive$4,shallowRef: shallowRef$5,toRef: toRef$5,unref: unref$1,watchEffect: watchEffect$3} = await importShared('vue');
+const {capitalize,Comment,Fragment,isVNode,reactive: reactive$3,shallowRef: shallowRef$5,toRef: toRef$5,unref: unref$1,watchEffect: watchEffect$3} = await importShared('vue');
 function getNestedValue(obj, path, fallback) {
   const last = path.length - 1;
   if (last < 0) return obj === undefined ? fallback : obj;
@@ -847,7 +422,7 @@ function getEventCoordinates(e) {
  */
 
 function destructComputed(getter) {
-  const refs = reactive$4({});
+  const refs = reactive$3({});
   watchEffect$3(() => {
     const base = getter();
     for (const key in base) {
@@ -875,7 +450,7 @@ function eventName(propName) {
 
 const EventProp = () => [Function, Array];
 function hasEvent(props, name) {
-  name = 'on' + capitalize$1(name);
+  name = 'on' + capitalize(name);
   return !!(props[name] || props[`${name}Once`] || props[`${name}Capture`] || props[`${name}OnceCapture`] || props[`${name}CaptureOnce`]);
 }
 function callEvent(handler) {
@@ -985,218 +560,6 @@ function checkPrintable(e) {
 }
 function isPrimitive(value) {
   return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint';
-}
-
-// Utilities
-const block = ['top', 'bottom'];
-const inline = ['start', 'end', 'left', 'right'];
-/** Parse a raw anchor string into an object */
-function parseAnchor(anchor, isRtl) {
-  let [side, align] = anchor.split(' ');
-  if (!align) {
-    align = includes(block, side) ? 'start' : includes(inline, side) ? 'top' : 'center';
-  }
-  return {
-    side: toPhysical(side, isRtl),
-    align: toPhysical(align, isRtl)
-  };
-}
-function toPhysical(str, isRtl) {
-  if (str === 'start') return isRtl ? 'right' : 'left';
-  if (str === 'end') return isRtl ? 'left' : 'right';
-  return str;
-}
-function flipSide(anchor) {
-  return {
-    side: {
-      center: 'center',
-      top: 'bottom',
-      bottom: 'top',
-      left: 'right',
-      right: 'left'
-    }[anchor.side],
-    align: anchor.align
-  };
-}
-function flipAlign(anchor) {
-  return {
-    side: anchor.side,
-    align: {
-      center: 'center',
-      top: 'bottom',
-      bottom: 'top',
-      left: 'right',
-      right: 'left'
-    }[anchor.align]
-  };
-}
-function flipCorner(anchor) {
-  return {
-    side: anchor.align,
-    align: anchor.side
-  };
-}
-function getAxis(anchor) {
-  return includes(block, anchor.side) ? 'y' : 'x';
-}
-
-class Box {
-  constructor(_ref) {
-    let {
-      x,
-      y,
-      width,
-      height
-    } = _ref;
-    this.x = x;
-    this.y = y;
-    this.width = width;
-    this.height = height;
-  }
-  get top() {
-    return this.y;
-  }
-  get bottom() {
-    return this.y + this.height;
-  }
-  get left() {
-    return this.x;
-  }
-  get right() {
-    return this.x + this.width;
-  }
-}
-function getOverflow(a, b) {
-  return {
-    x: {
-      before: Math.max(0, b.left - a.left),
-      after: Math.max(0, a.right - b.right)
-    },
-    y: {
-      before: Math.max(0, b.top - a.top),
-      after: Math.max(0, a.bottom - b.bottom)
-    }
-  };
-}
-function getTargetBox(target) {
-  if (Array.isArray(target)) {
-    return new Box({
-      x: target[0],
-      y: target[1],
-      width: 0,
-      height: 0
-    });
-  } else {
-    return target.getBoundingClientRect();
-  }
-}
-
-// Utilities
-/** @see https://stackoverflow.com/a/57876601/2074736 */
-function nullifyTransforms(el) {
-  const rect = el.getBoundingClientRect();
-  const style = getComputedStyle(el);
-  const tx = style.transform;
-  if (tx) {
-    let ta, sx, sy, dx, dy;
-    if (tx.startsWith('matrix3d(')) {
-      ta = tx.slice(9, -1).split(/, /);
-      sx = Number(ta[0]);
-      sy = Number(ta[5]);
-      dx = Number(ta[12]);
-      dy = Number(ta[13]);
-    } else if (tx.startsWith('matrix(')) {
-      ta = tx.slice(7, -1).split(/, /);
-      sx = Number(ta[0]);
-      sy = Number(ta[3]);
-      dx = Number(ta[4]);
-      dy = Number(ta[5]);
-    } else {
-      return new Box(rect);
-    }
-    const to = style.transformOrigin;
-    const x = rect.x - dx - (1 - sx) * parseFloat(to);
-    const y = rect.y - dy - (1 - sy) * parseFloat(to.slice(to.indexOf(' ') + 1));
-    const w = sx ? rect.width / sx : el.offsetWidth + 1;
-    const h = sy ? rect.height / sy : el.offsetHeight + 1;
-    return new Box({
-      x,
-      y,
-      width: w,
-      height: h
-    });
-  } else {
-    return new Box(rect);
-  }
-}
-function animate(el, keyframes, options) {
-  if (typeof el.animate === 'undefined') return {
-    finished: Promise.resolve()
-  };
-  let animation;
-  try {
-    animation = el.animate(keyframes, options);
-  } catch (err) {
-    return {
-      finished: Promise.resolve()
-    };
-  }
-  if (typeof animation.finished === 'undefined') {
-    animation.finished = new Promise(resolve => {
-      animation.onfinish = () => {
-        resolve(animation);
-      };
-    });
-  }
-  return animation;
-}
-
-// Utilities
-const handlers = new WeakMap();
-function bindProps(el, props) {
-  Object.keys(props).forEach(k => {
-    if (isOn(k)) {
-      const name = eventName(k);
-      const handler = handlers.get(el);
-      if (props[k] == null) {
-        handler?.forEach(v => {
-          const [n, fn] = v;
-          if (n === name) {
-            el.removeEventListener(name, fn);
-            handler.delete(v);
-          }
-        });
-      } else if (!handler || ![...handler]?.some(v => v[0] === name && v[1] === props[k])) {
-        el.addEventListener(name, props[k]);
-        const _handler = handler || new Set();
-        _handler.add([name, props[k]]);
-        if (!handlers.has(el)) handlers.set(el, _handler);
-      }
-    } else {
-      if (props[k] == null) {
-        el.removeAttribute(k);
-      } else {
-        el.setAttribute(k, props[k]);
-      }
-    }
-  });
-}
-function unbindProps(el, props) {
-  Object.keys(props).forEach(k => {
-    if (isOn(k)) {
-      const name = eventName(k);
-      const handler = handlers.get(el);
-      handler?.forEach(v => {
-        const [n, fn] = v;
-        if (n === name) {
-          el.removeEventListener(name, fn);
-          handler.delete(v);
-        }
-      });
-    } else {
-      el.removeAttribute(k);
-    }
-  });
 }
 
 /**
@@ -1691,13 +1054,13 @@ function injectSelf(key) {
 }
 
 // Utilities
-const {computed: computed$6,inject: inject$8,provide: provide$3,ref: ref$6,shallowRef: shallowRef$4,unref,watchEffect: watchEffect$2} = await importShared('vue');
+const {computed: computed$6,inject: inject$7,provide: provide$3,ref: ref$6,shallowRef: shallowRef$4,unref,watchEffect: watchEffect$2} = await importShared('vue');
 const DefaultsSymbol = Symbol.for('vuetify:defaults');
 function createDefaults(options) {
   return ref$6(options);
 }
 function injectDefaults() {
-  const defaults = inject$8(DefaultsSymbol);
+  const defaults = inject$7(DefaultsSymbol);
   if (!defaults) throw new Error('[Vuetify] Could not find defaults instance');
   return defaults;
 }
@@ -1852,114 +1215,6 @@ function defineFunctionalComponent(props, render) {
 
 // not a vue Component
 
-const {camelize,capitalize,h: h$1} = await importShared('vue');
-function createSimpleFunctional(klass) {
-  let tag = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 'div';
-  let name = arguments.length > 2 ? arguments[2] : undefined;
-  return genericComponent()({
-    name: name ?? capitalize(camelize(klass.replace(/__/g, '-'))),
-    props: {
-      tag: {
-        type: String,
-        default: tag
-      },
-      ...makeComponentProps()
-    },
-    setup(props, _ref) {
-      let {
-        slots
-      } = _ref;
-      return () => {
-        return h$1(props.tag, {
-          class: [klass, props.class],
-          style: props.style
-        }, slots.default?.());
-      };
-    }
-  });
-}
-
-/**
- * Returns:
- *  - 'null' if the node is not attached to the DOM
- *  - the root node (HTMLDocument | ShadowRoot) otherwise
- */
-function attachedRoot(node) {
-  /* istanbul ignore next */
-  if (typeof node.getRootNode !== 'function') {
-    // Shadow DOM not supported (IE11), lets find the root of this node
-    while (node.parentNode) node = node.parentNode;
-
-    // The root parent is the document if the node is attached to the DOM
-    if (node !== document) return null;
-    return document;
-  }
-  const root = node.getRootNode();
-
-  // The composed root node is the document if the node is attached to the DOM
-  if (root !== document && root.getRootNode({
-    composed: true
-  }) !== document) return null;
-  return root;
-}
-
-const standardEasing = 'cubic-bezier(0.4, 0, 0.2, 1)';
-const deceleratedEasing = 'cubic-bezier(0.0, 0, 0.2, 1)'; // Entering
-const acceleratedEasing = 'cubic-bezier(0.4, 0, 1, 1)'; // Leaving
-
-// Utilities
-function getPrefixedEventHandlers(attrs, suffix, getData) {
-  return Object.keys(attrs).filter(key => isOn(key) && key.endsWith(suffix)).reduce((acc, key) => {
-    acc[key.slice(0, -suffix.length)] = event => attrs[key](event, getData(event));
-    return acc;
-  }, {});
-}
-
-function getScrollParent(el) {
-  let includeHidden = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
-  while (el) {
-    if (includeHidden ? isPotentiallyScrollable(el) : hasScrollbar(el)) return el;
-    el = el.parentElement;
-  }
-  return document.scrollingElement;
-}
-function getScrollParents(el, stopAt) {
-  const elements = [];
-  if (stopAt && el && !stopAt.contains(el)) return elements;
-  while (el) {
-    if (hasScrollbar(el)) elements.push(el);
-    if (el === stopAt) break;
-    el = el.parentElement;
-  }
-  return elements;
-}
-function hasScrollbar(el) {
-  if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
-  const style = window.getComputedStyle(el);
-  return style.overflowY === 'scroll' || style.overflowY === 'auto' && el.scrollHeight > el.clientHeight;
-}
-function isPotentiallyScrollable(el) {
-  if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
-  const style = window.getComputedStyle(el);
-  return ['scroll', 'auto'].includes(style.overflowY);
-}
-
-function isFixedPosition(el) {
-  while (el) {
-    if (window.getComputedStyle(el).position === 'fixed') {
-      return true;
-    }
-    el = el.offsetParent;
-  }
-  return false;
-}
-
-// Utilities
-function useRender(render) {
-  const vm = getCurrentInstance('useRender');
-  vm.render = render;
-}
-
 // Utilities
 const {onBeforeUnmount: onBeforeUnmount$1,readonly,ref: ref$5,watch: watch$5} = await importShared('vue');
 function useResizeObserver(callback) {
@@ -1995,7 +1250,7 @@ function useResizeObserver(callback) {
   };
 }
 
-const {computed: computed$5,inject: inject$7,onActivated,onBeforeUnmount,onDeactivated,onMounted,provide: provide$2,reactive: reactive$3,ref: ref$4,shallowRef: shallowRef$3,toRef: toRef$4,useId} = await importShared('vue');
+const {computed: computed$5,inject: inject$6,onActivated,onBeforeUnmount,onDeactivated,onMounted,provide: provide$2,reactive: reactive$2,ref: ref$4,shallowRef: shallowRef$3,toRef: toRef$4,useId} = await importShared('vue');
 const VuetifyLayoutKey = Symbol.for('vuetify:layout');
 const VuetifyLayoutItemKey = Symbol.for('vuetify:layout-item');
 const ROOT_ZINDEX = 1000;
@@ -2019,7 +1274,7 @@ const makeLayoutItemProps = propsFactory({
   absolute: Boolean
 }, 'layout-item');
 function useLayout() {
-  const layout = inject$7(VuetifyLayoutKey);
+  const layout = inject$6(VuetifyLayoutKey);
   if (!layout) throw new Error('[Vuetify] Could not find injected layout');
   return {
     getLayoutItem: layout.getLayoutItem,
@@ -2028,7 +1283,7 @@ function useLayout() {
   };
 }
 function useLayoutItem(options) {
-  const layout = inject$7(VuetifyLayoutKey);
+  const layout = inject$6(VuetifyLayoutKey);
   if (!layout) throw new Error('[Vuetify] Could not find injected layout');
   const id = options.id ?? `layout-item-${useId()}`;
   const vm = getCurrentInstance('useLayoutItem');
@@ -2084,14 +1339,14 @@ const generateLayers = (layout, positions, layoutSizes, activeItems) => {
   return layers;
 };
 function createLayout(props) {
-  const parentLayout = inject$7(VuetifyLayoutKey, null);
+  const parentLayout = inject$6(VuetifyLayoutKey, null);
   const rootZIndex = computed$5(() => parentLayout ? parentLayout.rootZIndex.value - 100 : ROOT_ZINDEX);
   const registered = ref$4([]);
-  const positions = reactive$3(new Map());
-  const layoutSizes = reactive$3(new Map());
-  const priorities = reactive$3(new Map());
-  const activeItems = reactive$3(new Map());
-  const disabledTransitions = reactive$3(new Map());
+  const positions = reactive$2(new Map());
+  const layoutSizes = reactive$2(new Map());
+  const priorities = reactive$2(new Map());
+  const activeItems = reactive$2(new Map());
+  const disabledTransitions = reactive$2(new Map());
   const {
     resizeRef,
     contentRect: layoutRect
@@ -2267,7 +1522,7 @@ function createLayout(props) {
 }
 
 // Utilities
-const {effectScope: effectScope$1,onScopeDispose: onScopeDispose$1,watch: watch$4} = await importShared('vue');
+const {effectScope,onScopeDispose: onScopeDispose$1,watch: watch$4} = await importShared('vue');
 
 
 // Types
@@ -2275,7 +1530,7 @@ const {effectScope: effectScope$1,onScopeDispose: onScopeDispose$1,watch: watch$
 function useToggleScope(source, fn) {
   let scope;
   function start() {
-    scope = effectScope$1();
+    scope = effectScope();
     scope.run(() => fn.length ? fn(() => {
       scope?.stop();
       start();
@@ -2554,7 +1809,7 @@ function createVuetifyAdapter(options) {
 }
 
 // Utilities
-const {computed: computed$3,inject: inject$6,provide: provide$1,ref: ref$1,toRef: toRef$3} = await importShared('vue');
+const {computed: computed$3,inject: inject$5,provide: provide$1,ref: ref$1,toRef: toRef$3} = await importShared('vue');
 const LocaleSymbol = Symbol.for('vuetify:locale');
 function isLocaleInstance(obj) {
   return obj.name != null;
@@ -2568,12 +1823,12 @@ function createLocale(options) {
   };
 }
 function useLocale() {
-  const locale = inject$6(LocaleSymbol);
+  const locale = inject$5(LocaleSymbol);
   if (!locale) throw new Error('[Vuetify] Could not find injected locale instance');
   return locale;
 }
 function provideLocale(props) {
-  const locale = inject$6(LocaleSymbol);
+  const locale = inject$5(LocaleSymbol);
   if (!locale) throw new Error('[Vuetify] Could not find injected locale instance');
   const i18n = locale.provide(props);
   const rtl = provideRtl(i18n, locale.rtl, props);
@@ -2648,7 +1903,7 @@ function provideRtl(locale, rtl, props) {
   };
 }
 function useRtl() {
-  const locale = inject$6(LocaleSymbol);
+  const locale = inject$5(LocaleSymbol);
   if (!locale) throw new Error('[Vuetify] Could not find injected rtl instance');
   return {
     isRtl: locale.isRtl,
@@ -2657,7 +1912,7 @@ function useRtl() {
 }
 
 // Utilities
-const {computed: computed$2,inject: inject$5,provide,ref,shallowRef: shallowRef$1,toRef: toRef$2,watch: watch$1,watchEffect: watchEffect$1} = await importShared('vue');
+const {computed: computed$2,inject: inject$4,provide,ref,shallowRef: shallowRef$1,toRef: toRef$2,watch: watch$1,watchEffect: watchEffect$1} = await importShared('vue');
 const ThemeSymbol = Symbol.for('vuetify:theme');
 const makeThemeProps = propsFactory({
   theme: String
@@ -2950,7 +2205,7 @@ function createTheme(options) {
 }
 function provideTheme(props) {
   getCurrentInstance('provideTheme');
-  const theme = inject$5(ThemeSymbol, null);
+  const theme = inject$4(ThemeSymbol, null);
   if (!theme) throw new Error('Could not find Vuetify theme injection');
   const name = toRef$2(() => props.theme ?? theme.name.value);
   const current = toRef$2(() => theme.themes.value[name.value]);
@@ -2966,7 +2221,7 @@ function provideTheme(props) {
 }
 function useTheme() {
   getCurrentInstance('useTheme');
-  const theme = inject$5(ThemeSymbol, null);
+  const theme = inject$4(ThemeSymbol, null);
   if (!theme) throw new Error('Could not find Vuetify theme injection');
   return theme;
 }
@@ -3029,7 +2284,7 @@ const mdi = {
 };
 
 const {createVNode:_createVNode,mergeProps:_mergeProps} = await importShared('vue');
-const {computed: computed$1,inject: inject$4,toValue} = await importShared('vue');
+const {computed: computed$1,inject: inject$3,toValue} = await importShared('vue');
 const IconValue = [String, Function, Object, Array];
 const IconSymbol = Symbol.for('vuetify:icons');
 const makeIconProps = propsFactory({
@@ -3141,7 +2396,7 @@ function createIcons(options) {
   }, options);
 }
 const useIcon = props => {
-  const icons = inject$4(IconSymbol);
+  const icons = inject$3(IconSymbol);
   if (!icons) throw new Error('Missing Vuetify Icons provide!');
   const iconData = computed$1(() => {
     const iconAlias = toValue(props);
@@ -3181,7 +2436,7 @@ const useIcon = props => {
 };
 
 // Utilities
-const {computed,inject: inject$3,onScopeDispose,reactive: reactive$2,shallowRef,toRef: toRef$1,toRefs,watchEffect} = await importShared('vue');
+const {computed,inject: inject$2,onScopeDispose,reactive: reactive$1,shallowRef,toRef: toRef$1,toRefs,watchEffect} = await importShared('vue');
 const breakpoints = ['sm', 'md', 'lg', 'xl', 'xxl']; // no xs
 
 const DisplaySymbol = Symbol.for('vuetify:display');
@@ -3245,7 +2500,7 @@ function createDisplay(options, ssr) {
   } = parseDisplayOptions(options);
   const height = shallowRef(getClientHeight(ssr));
   const platform = shallowRef(getPlatform(ssr));
-  const state = reactive$2({});
+  const state = reactive$1({});
   const width = shallowRef(getClientWidth(ssr));
   function updateSize() {
     height.value = getClientHeight();
@@ -3315,7 +2570,7 @@ function useDisplay() {
     mobile: null
   };
   let name = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : getCurrentInstanceName();
-  const display = inject$3(DisplaySymbol);
+  const display = inject$2(DisplaySymbol);
   if (!display) throw new Error('Could not find Vuetify display injection');
   const mobile = computed(() => {
     if (props.mobile) {
@@ -3344,7 +2599,7 @@ function useDisplay() {
 }
 
 // Utilities
-const {inject: inject$2,toRef} = await importShared('vue');
+const {inject: inject$1,toRef} = await importShared('vue');
 const GoToSymbol = Symbol.for('vuetify:goto');
 function genDefaults() {
   return {
@@ -3435,7 +2690,7 @@ async function scrollTo(_target, _options, horizontal, goTo) {
 }
 function useGoTo() {
   let _options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
-  const goToInstance = inject$2(GoToSymbol);
+  const goToInstance = inject$1(GoToSymbol);
   const {
     isRtl
   } = useRtl();
@@ -4143,7 +3398,7 @@ class VuetifyDateAdapter {
   }
 }
 
-const {inject: inject$1,reactive: reactive$1,watch} = await importShared('vue');
+const {inject,reactive,watch} = await importShared('vue');
 const DateOptionsSymbol = Symbol.for('vuetify:date-options');
 const DateAdapterSymbol = Symbol.for('vuetify:date-adapter');
 function createDate(options, locale) {
@@ -4199,7 +3454,7 @@ function createDate(options, locale) {
   };
 }
 function createInstance(options, locale) {
-  const instance = reactive$1(typeof options.adapter === 'function'
+  const instance = reactive(typeof options.adapter === 'function'
   // eslint-disable-next-line new-cap
   ? new options.adapter({
     locale: options.locale[locale.current.value] ?? locale.current.value,
@@ -4211,119 +3466,10 @@ function createInstance(options, locale) {
   return instance;
 }
 function useDate() {
-  const options = inject$1(DateOptionsSymbol);
+  const options = inject(DateOptionsSymbol);
   if (!options) throw new Error('[Vuetify] Could not find injected date options');
   const locale = useLocale();
   return createInstance(options, locale);
 }
 
-const {effectScope,nextTick,reactive} = await importShared('vue');
-function createVuetify() {
-  let vuetify = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : {};
-  const {
-    blueprint,
-    ...rest
-  } = vuetify;
-  const options = mergeDeep(blueprint, rest);
-  const {
-    aliases = {},
-    components = {},
-    directives = {}
-  } = options;
-  const scope = effectScope();
-  return scope.run(() => {
-    const defaults = createDefaults(options.defaults);
-    const display = createDisplay(options.display, options.ssr);
-    const theme = createTheme(options.theme);
-    const icons = createIcons(options.icons);
-    const locale = createLocale(options.locale);
-    const date = createDate(options.date, locale);
-    const goTo = createGoTo(options.goTo, locale);
-    function install(app) {
-      for (const key in directives) {
-        app.directive(key, directives[key]);
-      }
-      for (const key in components) {
-        app.component(key, components[key]);
-      }
-      for (const key in aliases) {
-        app.component(key, defineComponent({
-          ...aliases[key],
-          name: key,
-          aliasName: aliases[key].name
-        }));
-      }
-      const appScope = effectScope();
-      appScope.run(() => {
-        theme.install(app);
-      });
-      app.onUnmount(() => appScope.stop());
-      app.provide(DefaultsSymbol, defaults);
-      app.provide(DisplaySymbol, display);
-      app.provide(ThemeSymbol, theme);
-      app.provide(IconSymbol, icons);
-      app.provide(LocaleSymbol, locale);
-      app.provide(DateOptionsSymbol, date.options);
-      app.provide(DateAdapterSymbol, date.instance);
-      app.provide(GoToSymbol, goTo);
-      if (IN_BROWSER && options.ssr) {
-        if (app.$nuxt) {
-          app.$nuxt.hook("app:suspense:resolve", () => {
-            display.update();
-          });
-        } else {
-          const {
-            mount
-          } = app;
-          app.mount = function() {
-            const vm = mount(...arguments);
-            nextTick(() => display.update());
-            app.mount = mount;
-            return vm;
-          };
-        }
-      }
-      {
-        app.mixin({
-          computed: {
-            $vuetify() {
-              return reactive({
-                defaults: inject.call(this, DefaultsSymbol),
-                display: inject.call(this, DisplaySymbol),
-                theme: inject.call(this, ThemeSymbol),
-                icons: inject.call(this, IconSymbol),
-                locale: inject.call(this, LocaleSymbol),
-                date: inject.call(this, DateAdapterSymbol)
-              });
-            }
-          }
-        });
-      }
-    }
-    function unmount() {
-      scope.stop();
-    }
-    return {
-      install,
-      unmount,
-      defaults,
-      display,
-      theme,
-      icons,
-      locale,
-      date,
-      goTo
-    };
-  });
-}
-const version = "3.8.3";
-createVuetify.version = version;
-function inject(key) {
-  const vm = this.$;
-  const provides = vm.parent?.provides ?? vm.vnode.appContext?.provides;
-  if (provides && key in provides) {
-    return provides[key];
-  }
-}
-
-export { pick as $, consoleWarn as A, useProxiedModel as B, useToggleScope as C, useLayoutItem as D, makeLayoutItemProps as E, deepEqual as F, wrapInArray as G, findChildrenWithProvide as H, includes as I, useTheme as J, useIcon as K, IconValue as L, flattenFragments as M, useResizeObserver as N, parseAnchor as O, IN_BROWSER as P, hasEvent as Q, isObject as R, SUPPORTS_INTERSECTION as S, keyCodes as T, createSimpleFunctional as U, useLocale as V, EventProp as W, filterInputAttrs as X, matchesSelector as Y, omit as Z, callEvent as _, provideTheme as a, VComponentIcon as a$, useDisplay as a0, useGoTo as a1, makeDisplayProps as a2, focusableChildren as a3, consoleError as a4, defineComponent as a5, deprecate as a6, isPrimitive as a7, getPropertyFromItem as a8, focusChild as a9, HSVtoHex as aA, HSLtoHSV as aB, HSVtoHSL as aC, RGBtoHSV as aD, HSVtoRGB as aE, has as aF, getDecimals as aG, createRange as aH, keyValues as aI, SUPPORTS_EYE_DROPPER as aJ, HSVtoCSS as aK, RGBtoCSS as aL, getContrast as aM, isComposingIgnoreKey as aN, getObjectValueByPath as aO, isEmpty as aP, defineFunctionalComponent as aQ, getPrefixedEventHandlers as aR, breakpoints as aS, useDate as aT, humanReadableFileSize as aU, provideLocale as aV, useLayout as aW, toPhysical as aX, VuetifyLayoutKey as aY, refElement as aZ, VClassIcon as a_, isFixedPosition as aa, flipSide as ab, flipAlign as ac, flipCorner as ad, CircularBuffer as ae, Box as af, getScrollParents as ag, getAxis as ah, getOverflow as ai, hasScrollbar as aj, defer as ak, templateRef as al, bindProps as am, unbindProps as an, attachedRoot as ao, getScrollParent as ap, isClickInsideElement as aq, getNextElement as ar, debounce as as, ensureValidVNode as at, checkPrintable as au, noop as av, pickWithRest as aw, keys as ax, getEventCoordinates as ay, HexToHSV as az, useRender as b, VLigatureIcon as b0, VSvgIcon as b1, getSharedFromRuntime as b2, getSharedFromLocal as b3, createVuetify as b4, version as b5, useDefaults as b6, createLayout as c, makeLayoutProps as d, makeComponentProps as e, animate as f, genericComponent as g, acceleratedEasing as h, importShared as i, deceleratedEasing as j, getTargetBox as k, provideDefaults as l, makeThemeProps as m, nullifyTransforms as n, convertToUnit as o, propsFactory as p, destructComputed as q, isCssColor as r, standardEasing as s, isParsableColor as t, useRtl as u, parseColor as v, getForeground as w, getCurrentInstanceName as x, getCurrentInstance as y, clamp as z };
+export { getPropertyFromItem as $, wrapInArray as A, findChildrenWithProvide as B, useTheme as C, useIcon as D, flattenFragments as E, useResizeObserver as F, IN_BROWSER as G, hasEvent as H, IconValue as I, isObject as J, keyCodes as K, useLocale as L, EventProp as M, filterInputAttrs as N, matchesSelector as O, omit as P, callEvent as Q, pick as R, SUPPORTS_INTERSECTION as S, useDisplay as T, useGoTo as U, makeDisplayProps as V, focusableChildren as W, consoleError as X, defineComponent as Y, deprecate as Z, isPrimitive as _, isOn as a, focusChild as a0, CircularBuffer as a1, defer as a2, templateRef as a3, isClickInsideElement as a4, getNextElement as a5, debounce as a6, ensureValidVNode as a7, checkPrintable as a8, noop as a9, VuetifyLayoutKey as aA, refElement as aB, VClassIcon as aC, VComponentIcon as aD, VLigatureIcon as aE, VSvgIcon as aF, mergeDeep as aG, createDefaults as aH, createDisplay as aI, createTheme as aJ, createIcons as aK, createLocale as aL, createDate as aM, createGoTo as aN, DefaultsSymbol as aO, DisplaySymbol as aP, ThemeSymbol as aQ, IconSymbol as aR, LocaleSymbol as aS, DateOptionsSymbol as aT, DateAdapterSymbol as aU, GoToSymbol as aV, useDefaults as aW, pickWithRest as aa, keys as ab, getEventCoordinates as ac, HexToHSV as ad, HSVtoHex as ae, HSLtoHSV as af, HSVtoHSL as ag, RGBtoHSV as ah, HSVtoRGB as ai, has as aj, getDecimals as ak, createRange as al, keyValues as am, SUPPORTS_EYE_DROPPER as an, HSVtoCSS as ao, RGBtoCSS as ap, getContrast as aq, isComposingIgnoreKey as ar, getObjectValueByPath as as, isEmpty as at, defineFunctionalComponent as au, breakpoints as av, useDate as aw, humanReadableFileSize as ax, provideLocale as ay, useLayout as az, getCurrentInstance as b, provideTheme as c, createLayout as d, eventName as e, makeLayoutProps as f, genericComponent as g, provideDefaults as h, includes as i, convertToUnit as j, destructComputed as k, isCssColor as l, makeThemeProps as m, isParsableColor as n, parseColor as o, propsFactory as p, getForeground as q, getCurrentInstanceName as r, clamp as s, consoleWarn as t, useRtl as u, useProxiedModel as v, useToggleScope as w, useLayoutItem as x, makeLayoutItemProps as y, deepEqual as z };

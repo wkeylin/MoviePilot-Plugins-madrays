@@ -1,8 +1,9 @@
-import { i as importShared, g as genericComponent, p as propsFactory, a as provideTheme, c as createLayout, u as useRtl, b as useRender, m as makeThemeProps, d as makeLayoutProps, e as makeComponentProps, f as animate, h as acceleratedEasing, s as standardEasing, j as deceleratedEasing, k as getTargetBox, n as nullifyTransforms, l as provideDefaults, o as convertToUnit, q as destructComputed, r as isCssColor, t as isParsableColor, v as parseColor, w as getForeground, x as getCurrentInstanceName, S as SUPPORTS_INTERSECTION, y as getCurrentInstance, z as clamp, A as consoleWarn, B as useProxiedModel, C as useToggleScope, D as useLayoutItem, E as makeLayoutItemProps, F as deepEqual, G as wrapInArray, H as findChildrenWithProvide, I as includes, J as useTheme, K as useIcon, L as IconValue, M as flattenFragments, N as useResizeObserver, O as parseAnchor, P as IN_BROWSER, Q as hasEvent, R as isObject, T as keyCodes, U as createSimpleFunctional, V as useLocale, W as EventProp, X as filterInputAttrs, Y as matchesSelector, Z as omit, _ as callEvent, $ as pick, a0 as useDisplay, a1 as useGoTo, a2 as makeDisplayProps, a3 as focusableChildren, a4 as consoleError, a5 as defineComponent, a6 as deprecate, a7 as isPrimitive, a8 as getPropertyFromItem, a9 as focusChild, aa as isFixedPosition, ab as flipSide, ac as flipAlign, ad as flipCorner, ae as CircularBuffer, af as Box, ag as getScrollParents, ah as getAxis, ai as getOverflow, aj as hasScrollbar, ak as defer, al as templateRef, am as bindProps, an as unbindProps, ao as attachedRoot, ap as getScrollParent, aq as isClickInsideElement, ar as getNextElement, as as debounce, at as ensureValidVNode, au as checkPrintable, av as noop, aw as pickWithRest, ax as keys, ay as getEventCoordinates, az as HexToHSV, aA as HSVtoHex, aB as HSLtoHSV, aC as HSVtoHSL, aD as RGBtoHSV, aE as HSVtoRGB, aF as has, aG as getDecimals, aH as createRange, aI as keyValues, aJ as SUPPORTS_EYE_DROPPER, aK as HSVtoCSS, aL as RGBtoCSS, aM as getContrast, aN as isComposingIgnoreKey, aO as getObjectValueByPath, aP as isEmpty, aQ as defineFunctionalComponent, aR as getPrefixedEventHandlers, aS as breakpoints, aT as useDate, aU as humanReadableFileSize, aV as provideLocale, aW as useLayout, aX as toPhysical, aY as VuetifyLayoutKey, aZ as refElement, a_ as VClassIcon, a$ as VComponentIcon, b0 as VLigatureIcon, b1 as VSvgIcon } from './vuetify-lib-BYoeOZrH.js';
-import PageComponent from './__federation_expose_Page-CBkFB10A.js';
-import ConfigComponent from './__federation_expose_Config-Dj5Up-1n.js';
-import DashboardComponent from './__federation_expose_Dashboard-BZX6fToZ.js';
+import { importShared } from './__federation_fn_import-JrT3xvdd.js';
+import PageComponent from './__federation_expose_Page-BhCD9QUr.js';
+import ConfigComponent from './__federation_expose_Config-DEahhRyd.js';
+import DashboardComponent from './__federation_expose_Dashboard-iJL_Safg.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
+import { p as propsFactory, i as includes, a as isOn, e as eventName, g as genericComponent, b as getCurrentInstance, c as provideTheme, d as createLayout, u as useRtl, m as makeThemeProps, f as makeLayoutProps, h as provideDefaults, j as convertToUnit, k as destructComputed, l as isCssColor, n as isParsableColor, o as parseColor, q as getForeground, r as getCurrentInstanceName, S as SUPPORTS_INTERSECTION, s as clamp, t as consoleWarn, v as useProxiedModel, w as useToggleScope, x as useLayoutItem, y as makeLayoutItemProps, z as deepEqual, A as wrapInArray, B as findChildrenWithProvide, C as useTheme, D as useIcon, I as IconValue, E as flattenFragments, F as useResizeObserver, G as IN_BROWSER, H as hasEvent, J as isObject, K as keyCodes, L as useLocale, M as EventProp, N as filterInputAttrs, O as matchesSelector, P as omit, Q as callEvent, R as pick, T as useDisplay, U as useGoTo, V as makeDisplayProps, W as focusableChildren, X as consoleError, Y as defineComponent, Z as deprecate, _ as isPrimitive, $ as getPropertyFromItem, a0 as focusChild, a1 as CircularBuffer, a2 as defer, a3 as templateRef, a4 as isClickInsideElement, a5 as getNextElement, a6 as debounce, a7 as ensureValidVNode, a8 as checkPrintable, a9 as noop, aa as pickWithRest, ab as keys, ac as getEventCoordinates, ad as HexToHSV, ae as HSVtoHex, af as HSLtoHSV, ag as HSVtoHSL, ah as RGBtoHSV, ai as HSVtoRGB, aj as has, ak as getDecimals, al as createRange, am as keyValues, an as SUPPORTS_EYE_DROPPER, ao as HSVtoCSS, ap as RGBtoCSS, aq as getContrast, ar as isComposingIgnoreKey, as as getObjectValueByPath, at as isEmpty, au as defineFunctionalComponent, av as breakpoints, aw as useDate, ax as humanReadableFileSize, ay as provideLocale, az as useLayout, aA as VuetifyLayoutKey, aB as refElement, aC as VClassIcon, aD as VComponentIcon, aE as VLigatureIcon, aF as VSvgIcon } from './date-BMtbN87Q.js';
 
 true&&(function polyfill() {
   const relList = document.createElement("link").relList;
@@ -481,6 +482,336 @@ return (_ctx, _cache) => {
 
 };
 const App = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-d55c8c94"]]);
+
+// Utilities
+// Composables
+const makeComponentProps = propsFactory({
+  class: [String, Array, Object],
+  style: {
+    type: [String, Array, Object],
+    default: null
+  }
+}, 'component');
+
+// Utilities
+const block = ['top', 'bottom'];
+const inline = ['start', 'end', 'left', 'right'];
+/** Parse a raw anchor string into an object */
+function parseAnchor(anchor, isRtl) {
+  let [side, align] = anchor.split(' ');
+  if (!align) {
+    align = includes(block, side) ? 'start' : includes(inline, side) ? 'top' : 'center';
+  }
+  return {
+    side: toPhysical(side, isRtl),
+    align: toPhysical(align, isRtl)
+  };
+}
+function toPhysical(str, isRtl) {
+  if (str === 'start') return isRtl ? 'right' : 'left';
+  if (str === 'end') return isRtl ? 'left' : 'right';
+  return str;
+}
+function flipSide(anchor) {
+  return {
+    side: {
+      center: 'center',
+      top: 'bottom',
+      bottom: 'top',
+      left: 'right',
+      right: 'left'
+    }[anchor.side],
+    align: anchor.align
+  };
+}
+function flipAlign(anchor) {
+  return {
+    side: anchor.side,
+    align: {
+      center: 'center',
+      top: 'bottom',
+      bottom: 'top',
+      left: 'right',
+      right: 'left'
+    }[anchor.align]
+  };
+}
+function flipCorner(anchor) {
+  return {
+    side: anchor.align,
+    align: anchor.side
+  };
+}
+function getAxis(anchor) {
+  return includes(block, anchor.side) ? 'y' : 'x';
+}
+
+class Box {
+  constructor(_ref) {
+    let {
+      x,
+      y,
+      width,
+      height
+    } = _ref;
+    this.x = x;
+    this.y = y;
+    this.width = width;
+    this.height = height;
+  }
+  get top() {
+    return this.y;
+  }
+  get bottom() {
+    return this.y + this.height;
+  }
+  get left() {
+    return this.x;
+  }
+  get right() {
+    return this.x + this.width;
+  }
+}
+function getOverflow(a, b) {
+  return {
+    x: {
+      before: Math.max(0, b.left - a.left),
+      after: Math.max(0, a.right - b.right)
+    },
+    y: {
+      before: Math.max(0, b.top - a.top),
+      after: Math.max(0, a.bottom - b.bottom)
+    }
+  };
+}
+function getTargetBox(target) {
+  if (Array.isArray(target)) {
+    return new Box({
+      x: target[0],
+      y: target[1],
+      width: 0,
+      height: 0
+    });
+  } else {
+    return target.getBoundingClientRect();
+  }
+}
+
+// Utilities
+/** @see https://stackoverflow.com/a/57876601/2074736 */
+function nullifyTransforms(el) {
+  const rect = el.getBoundingClientRect();
+  const style = getComputedStyle(el);
+  const tx = style.transform;
+  if (tx) {
+    let ta, sx, sy, dx, dy;
+    if (tx.startsWith('matrix3d(')) {
+      ta = tx.slice(9, -1).split(/, /);
+      sx = Number(ta[0]);
+      sy = Number(ta[5]);
+      dx = Number(ta[12]);
+      dy = Number(ta[13]);
+    } else if (tx.startsWith('matrix(')) {
+      ta = tx.slice(7, -1).split(/, /);
+      sx = Number(ta[0]);
+      sy = Number(ta[3]);
+      dx = Number(ta[4]);
+      dy = Number(ta[5]);
+    } else {
+      return new Box(rect);
+    }
+    const to = style.transformOrigin;
+    const x = rect.x - dx - (1 - sx) * parseFloat(to);
+    const y = rect.y - dy - (1 - sy) * parseFloat(to.slice(to.indexOf(' ') + 1));
+    const w = sx ? rect.width / sx : el.offsetWidth + 1;
+    const h = sy ? rect.height / sy : el.offsetHeight + 1;
+    return new Box({
+      x,
+      y,
+      width: w,
+      height: h
+    });
+  } else {
+    return new Box(rect);
+  }
+}
+function animate(el, keyframes, options) {
+  if (typeof el.animate === 'undefined') return {
+    finished: Promise.resolve()
+  };
+  let animation;
+  try {
+    animation = el.animate(keyframes, options);
+  } catch (err) {
+    return {
+      finished: Promise.resolve()
+    };
+  }
+  if (typeof animation.finished === 'undefined') {
+    animation.finished = new Promise(resolve => {
+      animation.onfinish = () => {
+        resolve(animation);
+      };
+    });
+  }
+  return animation;
+}
+
+// Utilities
+const handlers = new WeakMap();
+function bindProps(el, props) {
+  Object.keys(props).forEach(k => {
+    if (isOn(k)) {
+      const name = eventName(k);
+      const handler = handlers.get(el);
+      if (props[k] == null) {
+        handler?.forEach(v => {
+          const [n, fn] = v;
+          if (n === name) {
+            el.removeEventListener(name, fn);
+            handler.delete(v);
+          }
+        });
+      } else if (!handler || ![...handler]?.some(v => v[0] === name && v[1] === props[k])) {
+        el.addEventListener(name, props[k]);
+        const _handler = handler || new Set();
+        _handler.add([name, props[k]]);
+        if (!handlers.has(el)) handlers.set(el, _handler);
+      }
+    } else {
+      if (props[k] == null) {
+        el.removeAttribute(k);
+      } else {
+        el.setAttribute(k, props[k]);
+      }
+    }
+  });
+}
+function unbindProps(el, props) {
+  Object.keys(props).forEach(k => {
+    if (isOn(k)) {
+      const name = eventName(k);
+      const handler = handlers.get(el);
+      handler?.forEach(v => {
+        const [n, fn] = v;
+        if (n === name) {
+          el.removeEventListener(name, fn);
+          handler.delete(v);
+        }
+      });
+    } else {
+      el.removeAttribute(k);
+    }
+  });
+}
+
+const {camelize: camelize$1,capitalize: capitalize$3,h: h$5} = await importShared('vue');
+function createSimpleFunctional(klass) {
+  let tag = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 'div';
+  let name = arguments.length > 2 ? arguments[2] : undefined;
+  return genericComponent()({
+    name: name ?? capitalize$3(camelize$1(klass.replace(/__/g, '-'))),
+    props: {
+      tag: {
+        type: String,
+        default: tag
+      },
+      ...makeComponentProps()
+    },
+    setup(props, _ref) {
+      let {
+        slots
+      } = _ref;
+      return () => {
+        return h$5(props.tag, {
+          class: [klass, props.class],
+          style: props.style
+        }, slots.default?.());
+      };
+    }
+  });
+}
+
+/**
+ * Returns:
+ *  - 'null' if the node is not attached to the DOM
+ *  - the root node (HTMLDocument | ShadowRoot) otherwise
+ */
+function attachedRoot(node) {
+  /* istanbul ignore next */
+  if (typeof node.getRootNode !== 'function') {
+    // Shadow DOM not supported (IE11), lets find the root of this node
+    while (node.parentNode) node = node.parentNode;
+
+    // The root parent is the document if the node is attached to the DOM
+    if (node !== document) return null;
+    return document;
+  }
+  const root = node.getRootNode();
+
+  // The composed root node is the document if the node is attached to the DOM
+  if (root !== document && root.getRootNode({
+    composed: true
+  }) !== document) return null;
+  return root;
+}
+
+const standardEasing = 'cubic-bezier(0.4, 0, 0.2, 1)';
+const deceleratedEasing = 'cubic-bezier(0.0, 0, 0.2, 1)'; // Entering
+const acceleratedEasing = 'cubic-bezier(0.4, 0, 1, 1)'; // Leaving
+
+// Utilities
+function getPrefixedEventHandlers(attrs, suffix, getData) {
+  return Object.keys(attrs).filter(key => isOn(key) && key.endsWith(suffix)).reduce((acc, key) => {
+    acc[key.slice(0, -suffix.length)] = event => attrs[key](event, getData(event));
+    return acc;
+  }, {});
+}
+
+function getScrollParent(el) {
+  let includeHidden = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
+  while (el) {
+    if (includeHidden ? isPotentiallyScrollable(el) : hasScrollbar(el)) return el;
+    el = el.parentElement;
+  }
+  return document.scrollingElement;
+}
+function getScrollParents(el, stopAt) {
+  const elements = [];
+  if (stopAt && el && !stopAt.contains(el)) return elements;
+  while (el) {
+    if (hasScrollbar(el)) elements.push(el);
+    if (el === stopAt) break;
+    el = el.parentElement;
+  }
+  return elements;
+}
+function hasScrollbar(el) {
+  if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+  const style = window.getComputedStyle(el);
+  return style.overflowY === 'scroll' || style.overflowY === 'auto' && el.scrollHeight > el.clientHeight;
+}
+function isPotentiallyScrollable(el) {
+  if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+  const style = window.getComputedStyle(el);
+  return ['scroll', 'auto'].includes(style.overflowY);
+}
+
+function isFixedPosition(el) {
+  while (el) {
+    if (window.getComputedStyle(el).position === 'fixed') {
+      return true;
+    }
+    el = el.offsetParent;
+  }
+  return false;
+}
+
+// Utilities
+function useRender(render) {
+  const vm = getCurrentInstance('useRender');
+  vm.render = render;
+}
 
 const {createVNode:_createVNode$2j} = await importShared('vue');
 const makeVAppProps = propsFactory({

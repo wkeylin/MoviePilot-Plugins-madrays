@@ -1,4 +1,4 @@
-import { i as importShared } from './vuetify-lib-BYoeOZrH.js';
+import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 var cronstrueI18n = {exports: {}};
@@ -7941,10 +7941,16 @@ const {resolveComponent:_resolveComponent,createVNode:_createVNode,createElement
 
 
 const _hoisted_1 = { class: "plugin-config" };
-const _hoisted_2 = { class: "mb-2" };
-const _hoisted_3 = { class: "mt-2" };
-const _hoisted_4 = { class: "d-flex flex-wrap" };
-const _hoisted_5 = {
+const _hoisted_2 = { class: "setting-item d-flex align-center py-2" };
+const _hoisted_3 = { class: "setting-content flex-grow-1" };
+const _hoisted_4 = { class: "d-flex justify-space-between align-center" };
+const _hoisted_5 = { class: "setting-item d-flex align-center py-2" };
+const _hoisted_6 = { class: "setting-content flex-grow-1" };
+const _hoisted_7 = { class: "d-flex justify-space-between align-center" };
+const _hoisted_8 = { class: "mb-2" };
+const _hoisted_9 = { class: "mt-2" };
+const _hoisted_10 = { class: "d-flex flex-wrap" };
+const _hoisted_11 = {
   key: 1,
   class: "text-caption text-grey align-self-center ml-1"
 };
@@ -7956,7 +7962,7 @@ const _sfc_main = {
   __name: 'Config',
   props: {
   api: { 
-    type: Object,
+    type: [Object, Function],
     required: true,
   },
   initialConfig: {
@@ -8224,7 +8230,7 @@ return (_ctx, _cache) => {
               default: _withCtx(() => [
                 _createVNode(_component_v_card, {
                   flat: "",
-                  class: "rounded mb-3 border bg-transparent"
+                  class: "rounded mb-3 border config-card"
                 }, {
                   default: _withCtx(() => [
                     _createVNode(_component_v_card_title, { class: "text-caption d-flex align-center px-3 py-2 bg-primary-lighten-5" }, {
@@ -8248,17 +8254,32 @@ return (_ctx, _cache) => {
                               md: "6"
                             }, {
                               default: _withCtx(() => [
-                                _createVNode(_component_v_switch, {
-                                  modelValue: editableConfig.enable,
-                                  "onUpdate:modelValue": _cache[0] || (_cache[0] = $event => ((editableConfig.enable) = $event)),
-                                  label: "启用插件",
-                                  color: "primary",
-                                  inset: "",
-                                  hint: "是否启用日志自动清理功能",
-                                  "persistent-hint": "",
-                                  disabled: saving.value,
-                                  density: "compact"
-                                }, null, 8, ["modelValue", "disabled"])
+                                _createElementVNode("div", _hoisted_2, [
+                                  _createVNode(_component_v_icon, {
+                                    icon: "mdi-power",
+                                    size: "small",
+                                    color: editableConfig.enable ? 'success' : 'grey',
+                                    class: "mr-3"
+                                  }, null, 8, ["color"]),
+                                  _createElementVNode("div", _hoisted_3, [
+                                    _createElementVNode("div", _hoisted_4, [
+                                      _cache[10] || (_cache[10] = _createElementVNode("div", null, [
+                                        _createElementVNode("div", { class: "text-subtitle-2" }, "启用插件"),
+                                        _createElementVNode("div", { class: "text-caption text-grey" }, "是否启用日志自动清理功能")
+                                      ], -1)),
+                                      _createVNode(_component_v_switch, {
+                                        modelValue: editableConfig.enable,
+                                        "onUpdate:modelValue": _cache[0] || (_cache[0] = $event => ((editableConfig.enable) = $event)),
+                                        color: "primary",
+                                        inset: "",
+                                        disabled: saving.value,
+                                        density: "compact",
+                                        "hide-details": "",
+                                        class: "small-switch"
+                                      }, null, 8, ["modelValue", "disabled"])
+                                    ])
+                                  ])
+                                ])
                               ]),
                               _: 1
                             }),
@@ -8267,17 +8288,32 @@ return (_ctx, _cache) => {
                               md: "6"
                             }, {
                               default: _withCtx(() => [
-                                _createVNode(_component_v_switch, {
-                                  modelValue: editableConfig.notify,
-                                  "onUpdate:modelValue": _cache[1] || (_cache[1] = $event => ((editableConfig.notify) = $event)),
-                                  label: "启用通知",
-                                  color: "info",
-                                  inset: "",
-                                  hint: "清理完成后是否发送站内消息通知",
-                                  "persistent-hint": "",
-                                  disabled: saving.value,
-                                  density: "compact"
-                                }, null, 8, ["modelValue", "disabled"])
+                                _createElementVNode("div", _hoisted_5, [
+                                  _createVNode(_component_v_icon, {
+                                    icon: "mdi-bell",
+                                    size: "small",
+                                    color: editableConfig.notify ? 'info' : 'grey',
+                                    class: "mr-3"
+                                  }, null, 8, ["color"]),
+                                  _createElementVNode("div", _hoisted_6, [
+                                    _createElementVNode("div", _hoisted_7, [
+                                      _cache[11] || (_cache[11] = _createElementVNode("div", null, [
+                                        _createElementVNode("div", { class: "text-subtitle-2" }, "启用通知"),
+                                        _createElementVNode("div", { class: "text-caption text-grey" }, "清理完成后发送站内消息通知")
+                                      ], -1)),
+                                      _createVNode(_component_v_switch, {
+                                        modelValue: editableConfig.notify,
+                                        "onUpdate:modelValue": _cache[1] || (_cache[1] = $event => ((editableConfig.notify) = $event)),
+                                        color: "info",
+                                        inset: "",
+                                        disabled: saving.value,
+                                        density: "compact",
+                                        "hide-details": "",
+                                        class: "small-switch"
+                                      }, null, 8, ["modelValue", "disabled"])
+                                    ])
+                                  ])
+                                ])
                               ]),
                               _: 1
                             })
@@ -8292,7 +8328,7 @@ return (_ctx, _cache) => {
                 }),
                 _createVNode(_component_v_card, {
                   flat: "",
-                  class: "rounded mb-3 border bg-transparent"
+                  class: "rounded mb-3 border config-card"
                 }, {
                   default: _withCtx(() => [
                     _createVNode(_component_v_card_title, { class: "text-caption d-flex align-center px-3 py-2 bg-primary-lighten-5" }, {
@@ -8303,13 +8339,13 @@ return (_ctx, _cache) => {
                           color: "primary",
                           size: "small"
                         }),
-                        _cache[10] || (_cache[10] = _createElementVNode("span", null, "定时任务设置", -1))
+                        _cache[12] || (_cache[12] = _createElementVNode("span", null, "定时任务设置", -1))
                       ]),
                       _: 1
                     }),
                     _createVNode(_component_v_card_text, { class: "px-3 py-2" }, {
                       default: _withCtx(() => [
-                        _createElementVNode("div", _hoisted_2, [
+                        _createElementVNode("div", _hoisted_8, [
                           _createVNode(_component_VCronField, {
                             modelValue: editableConfig.cron,
                             "onUpdate:modelValue": _cache[2] || (_cache[2] = $event => ((editableConfig.cron) = $event)),
@@ -8319,9 +8355,9 @@ return (_ctx, _cache) => {
                             density: "compact"
                           }, null, 8, ["modelValue"])
                         ]),
-                        _createElementVNode("div", _hoisted_3, [
-                          _cache[11] || (_cache[11] = _createElementVNode("div", { class: "text-caption mb-1" }, "常用预设：", -1)),
-                          _createElementVNode("div", _hoisted_4, [
+                        _createElementVNode("div", _hoisted_9, [
+                          _cache[13] || (_cache[13] = _createElementVNode("div", { class: "text-caption mb-1" }, "常用预设：", -1)),
+                          _createElementVNode("div", _hoisted_10, [
                             (_openBlock(), _createElementBlock(_Fragment, null, _renderList(cronPresets, (preset) => {
                               return _createVNode(_component_v_chip, {
                                 key: preset.value,
@@ -8347,7 +8383,7 @@ return (_ctx, _cache) => {
                 }),
                 _createVNode(_component_v_card, {
                   flat: "",
-                  class: "rounded mb-3 border bg-transparent"
+                  class: "rounded mb-3 border config-card"
                 }, {
                   default: _withCtx(() => [
                     _createVNode(_component_v_card_title, { class: "text-caption d-flex align-center px-3 py-2 bg-primary-lighten-5" }, {
@@ -8358,7 +8394,7 @@ return (_ctx, _cache) => {
                           color: "primary",
                           size: "small"
                         }),
-                        _cache[12] || (_cache[12] = _createElementVNode("span", null, "清理规则", -1))
+                        _cache[14] || (_cache[14] = _createElementVNode("span", null, "清理规则", -1))
                       ]),
                       _: 1
                     }),
@@ -8449,7 +8485,7 @@ return (_ctx, _cache) => {
                                         }, 1032, ["color"]))
                                       : _createCommentVNode("", true),
                                     (index === 3)
-                                      ? (_openBlock(), _createElementBlock("span", _hoisted_5, " (+" + _toDisplayString(editableConfig.selected_ids.length - 3) + " 个) ", 1))
+                                      ? (_openBlock(), _createElementBlock("span", _hoisted_11, " (+" + _toDisplayString(editableConfig.selected_ids.length - 3) + " 个) ", 1))
                                       : _createCommentVNode("", true)
                                   ]),
                                   _: 1
@@ -8468,7 +8504,7 @@ return (_ctx, _cache) => {
                 }),
                 _createVNode(_component_v_card, {
                   flat: "",
-                  class: "rounded mb-3 border bg-transparent"
+                  class: "rounded mb-3 border config-card"
                 }, {
                   default: _withCtx(() => [
                     _createVNode(_component_v_card_text, { class: "d-flex align-center px-3 py-2" }, {
@@ -8479,7 +8515,7 @@ return (_ctx, _cache) => {
                           class: "mr-2",
                           size: "small"
                         }),
-                        _cache[13] || (_cache[13] = _createElementVNode("span", { class: "text-caption" }, " 此插件用于定时清理各个插件生成的日志文件（位于 logs/plugins/ 目录下），防止日志文件过大。 可设置保留最新的 N 行日志，并选择要清理的插件（不选则清理所有已安装插件）。 ", -1))
+                        _cache[15] || (_cache[15] = _createElementVNode("span", { class: "text-caption" }, " 此插件用于定时清理各个插件生成的日志文件（位于 logs/plugins/ 目录下），防止日志文件过大。 可设置保留最新的 N 行日志，并选择要清理的插件（不选则清理所有已安装插件）。 ", -1))
                       ]),
                       _: 1
                     })
@@ -8503,7 +8539,7 @@ return (_ctx, _cache) => {
               variant: "text",
               size: "small"
             }, {
-              default: _withCtx(() => _cache[14] || (_cache[14] = [
+              default: _withCtx(() => _cache[16] || (_cache[16] = [
                 _createTextVNode("状态页")
               ])),
               _: 1
@@ -8517,7 +8553,7 @@ return (_ctx, _cache) => {
               "prepend-icon": "mdi-restore",
               size: "small"
             }, {
-              default: _withCtx(() => _cache[15] || (_cache[15] = [
+              default: _withCtx(() => _cache[17] || (_cache[17] = [
                 _createTextVNode("重置")
               ])),
               _: 1
@@ -8531,7 +8567,7 @@ return (_ctx, _cache) => {
               variant: "text",
               size: "small"
             }, {
-              default: _withCtx(() => _cache[16] || (_cache[16] = [
+              default: _withCtx(() => _cache[18] || (_cache[18] = [
                 _createTextVNode("保存配置")
               ])),
               _: 1
@@ -8544,7 +8580,7 @@ return (_ctx, _cache) => {
               variant: "text",
               size: "small"
             }, {
-              default: _withCtx(() => _cache[17] || (_cache[17] = [
+              default: _withCtx(() => _cache[19] || (_cache[19] = [
                 _createTextVNode("关闭")
               ])),
               _: 1
@@ -8560,6 +8596,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const ConfigComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-2cc05e0c"]]);
+const ConfigComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-11b01562"]]);
 
 export { ConfigComponent as default };

@@ -19,7 +19,7 @@
           <v-row>
             <v-col cols="12" md="6">
               <!-- 当前状态 -->
-              <v-card flat class="rounded mb-3 border bg-transparent">
+              <v-card flat class="rounded mb-3 border config-card">
                 <v-card-title class="text-caption d-flex align-center px-3 py-2 bg-primary-lighten-5">
                   <v-icon icon="mdi-information" class="mr-2" color="primary" size="small" />
                   <span>当前状态</span>
@@ -78,7 +78,7 @@
             
             <v-col cols="12" md="6">
               <!-- 清理历史 -->
-              <v-card flat class="rounded mb-3 border bg-transparent">
+              <v-card flat class="rounded mb-3 border config-card">
                 <v-card-title class="text-caption d-flex align-center px-3 py-2 bg-primary-lighten-5">
                   <v-icon icon="mdi-history" class="mr-2" color="primary" size="small" />
                   <span>清理历史</span>
@@ -109,12 +109,22 @@
                         ({{ item.total_plugins_processed }} 个插件)
                       </div>
                     </v-timeline-item>
-                    <v-timeline-item v-if="statusData.cleaning_history.length > 3" dot-color="grey" size="x-small">
+                    <v-timeline-item v-if="statusData.cleaning_history.length > 3" dot-color="primary" size="x-small">
                       <template v-slot:icon>
                         <v-icon size="x-small">mdi-dots-horizontal</v-icon>
                       </template>
-                      <div class="text-caption text-grey">
-                        还有 {{ statusData.cleaning_history.length - 3 }} 条历史记录...
+                      <div class="text-caption d-flex align-center">
+                        <span class="text-grey">还有 {{ statusData.cleaning_history.length - 3 }} 条历史记录</span>
+                        <v-btn 
+                          variant="text" 
+                          density="comfortable" 
+                          size="x-small" 
+                          color="primary"
+                          class="ml-2"
+                          @click="showHistoryDialog = true"
+                        >
+                          查看更多
+                        </v-btn>
                       </div>
                     </v-timeline-item>
                   </v-timeline>
@@ -124,7 +134,7 @@
           </v-row>
 
           <!-- 上次运行详情 -->
-          <v-card flat class="rounded mb-3 border bg-transparent">
+          <v-card flat class="rounded mb-3 border config-card">
             <v-card-title class="text-caption d-flex align-center px-3 py-2 bg-primary-lighten-5">
               <v-icon icon="mdi-file-document" class="mr-2" color="primary" size="small" />
               <span>上次清理详情</span>
@@ -168,7 +178,7 @@
           </v-card>
 
           <!-- 插件日志状态 -->
-          <v-card flat class="rounded mb-3 border bg-transparent">
+          <v-card flat class="rounded mb-3 border config-card">
             <v-card-title class="text-caption d-flex align-center justify-space-between px-3 py-2 bg-primary-lighten-5 flex-wrap">
               <div class="d-flex align-center">
                 <v-icon icon="mdi-view-list" class="mr-2" color="primary" size="small" />
@@ -182,9 +192,9 @@
                   placeholder="搜索插件..."
                   prepend-inner-icon="mdi-magnify"
                   variant="outlined"
-                  class="max-width-120 my-1"
+                  class="search-field my-1"
                   bg-color="white"
-                  style="font-size: 12px"
+                  style="font-size: 12px; min-width: 140px;"
                 ></v-text-field>
                 <v-btn 
                   variant="text" 
@@ -208,52 +218,54 @@
                 <v-icon icon="mdi-information-outline" size="small" class="mb-1" />
                 <div class="text-caption">未找到已安装插件的日志</div>
               </div>
-              <v-table v-else density="compact" hover class="text-caption">
-                <thead>
-                  <tr>
-                    <th class="text-caption">插件名称</th>
-                    <th class="text-caption text-center">日志大小</th>
-                    <th class="text-caption text-center">行数</th>
-                    <th class="text-caption text-right">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(plugin, index) in filteredPluginLogs" :key="index">
-                    <td>
-                      <div class="d-flex align-center">
-                        <v-avatar size="18" class="mr-1" :color="isSpecialLog(plugin.id) ? 'grey-lighten-1' : getPluginColor(index)" variant="flat">
-                          <span class="text-white text-caption" style="font-size: 10px">{{ getPluginInitial(plugin.name) }}</span>
-                        </v-avatar>
-                        <span :class="{ 'text-grey': isSpecialLog(plugin.id) }">
-                          {{ plugin.name }} 
-                          <v-chip v-if="isSpecialLog(plugin.id)" size="x-small" color="grey-lighten-2" class="ml-1">系统日志</v-chip>
-                        </span>
-                      </div>
-                    </td>
-                    <td class="text-center">
-                      <v-chip size="x-small" :color="getPluginSizeColor(plugin.size)" variant="flat">
-                        {{ formatFileSize(plugin.size) }}
-                      </v-chip>
-                    </td>
-                    <td class="text-center">{{ plugin.lines_count }}</td>
-                    <td class="text-right">
-                      <v-btn 
-                        density="comfortable" 
-                        icon 
-                        variant="text" 
-                        color="error"
-                        size="x-small"
-                        :disabled="!statusData.enabled || cleaningSpecificPlugin === plugin.id"
-                        :loading="cleaningSpecificPlugin === plugin.id"
-                        @click="cleanSpecificPlugin(plugin.id, plugin.name)"
-                      >
-                        <v-icon icon="mdi-broom" size="small"></v-icon>
-                        <v-tooltip activator="parent" location="top">清理此日志</v-tooltip>
-                      </v-btn>
-                    </td>
-                  </tr>
-                </tbody>
-              </v-table>
+              <div v-else class="plugin-list-container">
+                <v-table density="compact" hover class="text-body-2">
+                  <thead>
+                    <tr>
+                      <th class="text-body-2 font-weight-bold">插件名称</th>
+                      <th class="text-body-2 font-weight-bold text-center">日志大小</th>
+                      <th class="text-body-2 font-weight-bold text-center">行数</th>
+                      <th class="text-body-2 font-weight-bold text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(plugin, index) in filteredPluginLogs" :key="index">
+                      <td>
+                        <div class="d-flex align-center">
+                          <div class="plugin-avatar mr-2" :class="isSpecialLog(plugin.id) ? 'special-log' : `color-${index % 10}`">
+                            <span>{{ getPluginInitial(plugin.name) }}</span>
+                          </div>
+                          <span :class="{ 'text-grey': isSpecialLog(plugin.id) }" class="plugin-name">
+                            {{ plugin.name }} 
+                            <v-chip v-if="isSpecialLog(plugin.id)" size="small" color="grey-lighten-2" class="ml-1">系统日志</v-chip>
+                          </span>
+                        </div>
+                      </td>
+                      <td class="text-center">
+                        <v-chip size="x-small" :color="getPluginSizeColor(plugin.size)" variant="flat">
+                          {{ formatFileSize(plugin.size) }}
+                        </v-chip>
+                      </td>
+                      <td class="text-center">{{ plugin.lines_count }}</td>
+                      <td class="text-right">
+                        <v-btn 
+                          density="comfortable" 
+                          icon 
+                          variant="text" 
+                          color="error"
+                          size="x-small"
+                          :disabled="!statusData.enabled || cleaningSpecificPlugin === plugin.id"
+                          :loading="cleaningSpecificPlugin === plugin.id"
+                          @click="cleanSpecificPlugin(plugin.id, plugin.name)"
+                        >
+                          <v-icon icon="mdi-broom" size="small"></v-icon>
+                          <v-tooltip activator="parent" location="top">清理此日志</v-tooltip>
+                        </v-btn>
+                      </td>
+                    </tr>
+                  </tbody>
+                </v-table>
+              </div>
             </v-card-text>
           </v-card>
         </div>
@@ -280,6 +292,48 @@
         <v-btn color="grey" @click="emit('close')" prepend-icon="mdi-close" variant="text" size="small">关闭</v-btn>
       </v-card-actions>
     </v-card>
+
+    <!-- 添加历史记录对话框 -->
+    <v-dialog v-model="showHistoryDialog" max-width="600px">
+      <v-card>
+        <v-card-title class="text-subtitle-1 d-flex align-center px-4 py-3 bg-primary-lighten-5">
+          <v-icon icon="mdi-history" class="mr-2" color="primary" />
+          <span>清理历史记录</span>
+        </v-card-title>
+        <v-card-text class="pa-4">
+          <v-timeline v-if="statusData.cleaning_history?.length" density="compact" align="start">
+            <v-timeline-item 
+              v-for="(item, index) in statusData.cleaning_history" 
+              :key="index"
+              :dot-color="getHistoryColor(index)"
+              size="small"
+            >
+              <template v-slot:icon>
+                <v-icon size="x-small">mdi-broom</v-icon>
+              </template>
+              <div class="d-flex justify-space-between align-center mb-1">
+                <span class="text-caption font-weight-medium">{{ item.timestamp }}</span>
+                <v-chip size="x-small" :color="getHistoryColor(index)" variant="flat">
+                  #{{ index + 1 }}
+                </v-chip>
+              </div>
+              <div class="text-body-2">
+                清理 <strong>{{ item.total_lines_cleaned }}</strong> 行 
+                ({{ item.total_plugins_processed }} 个插件)
+              </div>
+            </v-timeline-item>
+          </v-timeline>
+          <div v-else class="d-flex align-center justify-center py-4">
+            <v-icon icon="mdi-information-outline" color="grey" class="mr-2" />
+            <span class="text-grey">暂无清理历史记录</span>
+          </div>
+        </v-card-text>
+        <v-card-actions class="px-4 py-3">
+          <v-spacer></v-spacer>
+          <v-btn variant="text" color="primary" @click="showHistoryDialog = false">关闭</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -306,6 +360,7 @@ const refreshingPluginLogs = ref(false);
 const pluginLogsSizes = ref([]);
 const pluginSearch = ref('');
 const installedPlugins = ref([]);
+const showHistoryDialog = ref(false);
 
 // 中文名称映射缓存
 const pluginNameMap = reactive({});
@@ -702,5 +757,106 @@ onMounted(() => {
 
 .border {
   border: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.search-field {
+  max-width: 140px;
+}
+
+.plugin-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  color: white;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.plugin-name {
+  font-size: 14px;
+}
+
+.text-body-2 {
+  font-size: 14px !important;
+}
+
+.plugin-list-container {
+  max-height: 400px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.plugin-list-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.plugin-list-container::-webkit-scrollbar-track {
+  background: rgba(var(--v-theme-surface), 0.6);
+}
+
+.plugin-list-container::-webkit-scrollbar-thumb {
+  background-color: rgba(var(--v-theme-primary), 0.3);
+  border-radius: 6px;
+}
+
+.special-log {
+  background-color: rgba(128, 128, 128, 0.9);
+}
+
+.color-0 {
+  background-color: rgba(var(--v-theme-primary), 1);
+}
+
+.color-1 {
+  background-color: rgba(var(--v-theme-success), 1);
+}
+
+.color-2 {
+  background-color: rgba(var(--v-theme-indigo), 1);
+}
+
+.color-3 {
+  background-color: rgba(var(--v-theme-deep-purple), 1);
+}
+
+.color-4 {
+  background-color: rgba(var(--v-theme-teal), 1);
+}
+
+.color-5 {
+  background-color: rgba(var(--v-theme-cyan), 1);
+}
+
+.color-6 {
+  background-color: rgba(var(--v-theme-amber-darken-2), 1);
+}
+
+.color-7 {
+  background-color: rgba(var(--v-theme-blue), 1);
+}
+
+.color-8 {
+  background-color: rgba(var(--v-theme-error), 1);
+}
+
+.color-9 {
+  background-color: rgba(var(--v-theme-deep-orange), 1);
+}
+
+.config-card {
+  background-image: linear-gradient(to right, rgba(var(--v-theme-surface), 0.98), rgba(var(--v-theme-surface), 0.95)), 
+                    repeating-linear-gradient(45deg, rgba(var(--v-theme-primary), 0.03), rgba(var(--v-theme-primary), 0.03) 10px, transparent 10px, transparent 20px);
+  background-attachment: fixed;
+  box-shadow: 0 1px 2px rgba(var(--v-border-color), 0.05) !important;
+  transition: all 0.3s ease;
+}
+
+.config-card:hover {
+  box-shadow: 0 3px 6px rgba(var(--v-border-color), 0.1) !important;
 }
 </style>

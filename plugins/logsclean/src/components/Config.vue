@@ -13,7 +13,7 @@
 
         <v-form ref="form" v-model="isFormValid" @submit.prevent="saveFullConfig">
           <!-- 基本设置卡片 -->
-          <v-card flat class="rounded mb-3 border bg-transparent">
+          <v-card flat class="rounded mb-3 border config-card">
             <v-card-title class="text-caption d-flex align-center px-3 py-2 bg-primary-lighten-5">
               <v-icon icon="mdi-tune" class="mr-2" color="primary" size="small" />
               <span>基本设置</span>
@@ -21,35 +21,55 @@
             <v-card-text class="px-3 py-2">
               <v-row>
                 <v-col cols="12" md="6">
-                  <v-switch
-                    v-model="editableConfig.enable"
-                    label="启用插件"
-                    color="primary"
-                    inset
-                    hint="是否启用日志自动清理功能"
-                    persistent-hint
-                    :disabled="saving"
-                    density="compact"
-                  ></v-switch>
+                  <div class="setting-item d-flex align-center py-2">
+                    <v-icon icon="mdi-power" size="small" :color="editableConfig.enable ? 'success' : 'grey'" class="mr-3"></v-icon>
+                    <div class="setting-content flex-grow-1">
+                      <div class="d-flex justify-space-between align-center">
+                        <div>
+                          <div class="text-subtitle-2">启用插件</div>
+                          <div class="text-caption text-grey">是否启用日志自动清理功能</div>
+                        </div>
+                        <v-switch
+                          v-model="editableConfig.enable"
+                          color="primary"
+                          inset
+                          :disabled="saving"
+                          density="compact"
+                          hide-details
+                          class="small-switch"
+                        ></v-switch>
+                      </div>
+                    </div>
+                  </div>
                 </v-col>
                 <v-col cols="12" md="6">
-                  <v-switch
-                    v-model="editableConfig.notify"
-                    label="启用通知"
-                    color="info"
-                    inset
-                    hint="清理完成后是否发送站内消息通知"
-                    persistent-hint
-                    :disabled="saving"
-                    density="compact"
-                  ></v-switch>
+                  <div class="setting-item d-flex align-center py-2">
+                    <v-icon icon="mdi-bell" size="small" :color="editableConfig.notify ? 'info' : 'grey'" class="mr-3"></v-icon>
+                    <div class="setting-content flex-grow-1">
+                      <div class="d-flex justify-space-between align-center">
+                        <div>
+                          <div class="text-subtitle-2">启用通知</div>
+                          <div class="text-caption text-grey">清理完成后发送站内消息通知</div>
+                        </div>
+                        <v-switch
+                          v-model="editableConfig.notify"
+                          color="info"
+                          inset
+                          :disabled="saving"
+                          density="compact"
+                          hide-details
+                          class="small-switch"
+                        ></v-switch>
+                      </div>
+                    </div>
+                  </div>
                 </v-col>
               </v-row>
             </v-card-text>
           </v-card>
 
-          <!-- 定时任务设置 -->
-          <v-card flat class="rounded mb-3 border bg-transparent">
+          <!-- 定时任务设置 - 应用统一样式 -->
+          <v-card flat class="rounded mb-3 border config-card">
             <v-card-title class="text-caption d-flex align-center px-3 py-2 bg-primary-lighten-5">
               <v-icon icon="mdi-clock-time-five" class="mr-2" color="primary" size="small" />
               <span>定时任务设置</span>
@@ -86,8 +106,8 @@
             </v-card-text>
           </v-card>
 
-          <!-- 清理规则设置 -->
-          <v-card flat class="rounded mb-3 border bg-transparent">
+          <!-- 清理规则设置 - 应用统一样式 -->
+          <v-card flat class="rounded mb-3 border config-card">
             <v-card-title class="text-caption d-flex align-center px-3 py-2 bg-primary-lighten-5">
               <v-icon icon="mdi-filter-settings" class="mr-2" color="primary" size="small" />
               <span>清理规则</span>
@@ -154,8 +174,8 @@
             </v-card-text>
           </v-card>
 
-          <!-- 帮助信息卡片 -->
-          <v-card flat class="rounded mb-3 border bg-transparent">
+          <!-- 帮助信息卡片 - 应用统一样式 -->
+          <v-card flat class="rounded mb-3 border config-card">
             <v-card-text class="d-flex align-center px-3 py-2">
               <v-icon icon="mdi-information" color="info" class="mr-2" size="small"></v-icon>
               <span class="text-caption">
@@ -388,5 +408,39 @@ onMounted(() => {
 
 .border {
   border: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.config-card {
+  background-image: linear-gradient(to right, rgba(var(--v-theme-surface), 0.98), rgba(var(--v-theme-surface), 0.95)), 
+                    repeating-linear-gradient(45deg, rgba(var(--v-theme-primary), 0.03), rgba(var(--v-theme-primary), 0.03) 10px, transparent 10px, transparent 20px);
+  background-attachment: fixed;
+  box-shadow: 0 1px 2px rgba(var(--v-border-color), 0.05) !important;
+  transition: all 0.3s ease;
+}
+
+.config-card:hover {
+  box-shadow: 0 3px 6px rgba(var(--v-border-color), 0.1) !important;
+}
+
+.setting-item {
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  padding: 0.5rem;
+  margin-bottom: 4px;
+}
+
+.setting-item:hover {
+  background-color: rgba(var(--v-theme-primary), 0.03);
+}
+
+.small-switch {
+  transform: scale(0.8);
+  margin-right: -8px;
+}
+
+.text-subtitle-2 {
+  font-size: 14px !important;
+  font-weight: 500;
+  margin-bottom: 2px;
 }
 </style>
