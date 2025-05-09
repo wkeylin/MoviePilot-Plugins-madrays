@@ -60,9 +60,9 @@
   },
   "nodeseeksign": {
     "name": "NodeSeek论坛签到",
-    "description": "懒羊羊定制：自动完成NodeSeek论坛每日签到，支持随机奖励和自动加鸡腿功能",
+    "description": "懒羊羊定制：自动完成NodeSeek论坛每日签到，支持随机奖励和自动重试功能",
     "labels": "签到,NodeSeek,论坛",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/nodeseeksign.png",
     "author": "madrays",
     "level": 2,

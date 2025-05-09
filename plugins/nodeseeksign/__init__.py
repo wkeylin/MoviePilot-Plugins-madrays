@@ -1,11 +1,11 @@
 """
 NodeSeek论坛签到插件
-版本: 1.0.0
-作者: Hosea
+版本: 1.1.0
+作者: Madrays
 功能:
 - 自动完成NodeSeek论坛每日签到
 - 支持选择随机奖励或固定奖励
-- 自动给帖子加鸡腿（可配置）
+- 自动失败重试机制
 - 定时签到和历史记录
 - 支持绕过CloudFlare防护
 """
@@ -40,11 +40,11 @@ class nodeseeksign(_PluginBase):
     # 插件名称
     plugin_name = "NodeSeek论坛签到"
     # 插件描述
-    plugin_desc = "懒羊羊定制：自动完成NodeSeek论坛每日签到，支持随机奖励和自动加鸡腿功能"
+    plugin_desc = "懒羊羊定制：自动完成NodeSeek论坛每日签到，支持随机奖励和自动重试功能"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/nodeseeksign.png"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.1.0"
     # 插件作者
     plugin_author = "madrays"
     # 作者主页
@@ -62,10 +62,12 @@ class nodeseeksign(_PluginBase):
     _notify = False
     _onlyonce = False
     _cron = None
-    _auto_chicken = False  # 是否自动加鸡腿
     _random_choice = True  # 是否选择随机奖励，否则选择固定奖励
     _history_days = 30  # 历史保留天数
     _use_proxy = True     # 是否使用代理，默认启用
+    _max_retries = 3      # 最大重试次数
+    _retry_count = 0      # 当天重试计数
+    _scheduled_retry = None  # 计划的重试任务
 
     # 定时器
     _scheduler: Optional[BackgroundScheduler] = None
@@ -83,15 +85,14 @@ class nodeseeksign(_PluginBase):
                 self._notify = config.get("notify")
                 self._cron = config.get("cron")
                 self._onlyonce = config.get("onlyonce")
-                self._auto_chicken = config.get("auto_chicken")
                 self._random_choice = config.get("random_choice")
                 self._history_days = int(config.get("history_days", 30))
                 self._use_proxy = config.get("use_proxy", True)
+                self._max_retries = int(config.get("max_retries", 3))
                 
                 logger.info(f"配置: enabled={self._enabled}, notify={self._notify}, cron={self._cron}, "
-                           f"auto_chicken={self._auto_chicken}, "
                            f"random_choice={self._random_choice}, history_days={self._history_days}, "
-                           f"use_proxy={self._use_proxy}")
+                           f"use_proxy={self._use_proxy}, max_retries={self._max_retries}")
             
             if self._onlyonce:
                 logger.info("执行一次性签到")
@@ -107,10 +108,10 @@ class nodeseeksign(_PluginBase):
                     "cookie": self._cookie,
                     "notify": self._notify,
                     "cron": self._cron,
-                    "auto_chicken": self._auto_chicken,
                     "random_choice": self._random_choice,
                     "history_days": self._history_days,
-                    "use_proxy": self._use_proxy
+                    "use_proxy": self._use_proxy,
+                    "max_retries": self._max_retries
                 })
 
                 # 启动任务
@@ -179,12 +180,14 @@ class nodeseeksign(_PluginBase):
                 }
                 self._save_sign_history(sign_dict)
                 self._save_last_sign_date()
+                # 重置重试计数
+                self._retry_count = 0
                 
                 # 发送通知
                 if self._notify:
                     self._send_sign_notification(sign_dict, result)
             else:
-                # 签到失败
+                # 签到失败，安排重试
                 sign_dict = {
                     "date": datetime.today().strftime('%Y-%m-%d %H:%M:%S'),
                     "status": "签到失败",
@@ -192,13 +195,50 @@ class nodeseeksign(_PluginBase):
                 }
                 self._save_sign_history(sign_dict)
                 
-                # 发送通知
-                if self._notify:
-                    self.post_message(
-                        mtype=NotificationType.SiteMessage,
-                        title="【NodeSeek论坛签到失败】",
-                        text=f"签到失败: {result.get('message', '未知错误')}\n⏱️ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                # 检查是否需要重试
+                if self._retry_count < self._max_retries:
+                    self._retry_count += 1
+                    retry_minutes = random.randint(5, 15)
+                    retry_time = datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(minutes=retry_minutes)
+                    
+                    logger.info(f"签到失败，将在 {retry_minutes} 分钟后重试 (重试 {self._retry_count}/{self._max_retries})")
+                    
+                    # 安排重试任务
+                    if not self._scheduler:
+                        self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+                        if not self._scheduler.running:
+                            self._scheduler.start()
+                    
+                    # 移除之前计划的重试任务（如果有）
+                    if self._scheduled_retry:
+                        self._scheduler.remove_job(self._scheduled_retry)
+                    
+                    # 添加新的重试任务
+                    self._scheduled_retry = f"nodeseek_retry_{int(time.time())}"
+                    self._scheduler.add_job(
+                        func=self.sign,
+                        trigger='date',
+                        run_date=retry_time,
+                        id=self._scheduled_retry,
+                        name=f"NodeSeek论坛签到重试 {self._retry_count}/{self._max_retries}"
                     )
+                    
+                    if self._notify:
+                        self.post_message(
+                            mtype=NotificationType.SiteMessage,
+                            title="【NodeSeek论坛签到失败】",
+                            text=f"签到失败: {result.get('message', '未知错误')}\n将在 {retry_minutes} 分钟后进行第 {self._retry_count}/{self._max_retries} 次重试\n⏱️ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        )
+                else:
+                    # 达到最大重试次数，不再重试
+                    logger.warning(f"已达到最大重试次数 ({self._max_retries})，今日不再重试")
+                    
+                    if self._notify:
+                        self.post_message(
+                            mtype=NotificationType.SiteMessage,
+                            title="【NodeSeek论坛签到失败】",
+                            text=f"签到失败: {result.get('message', '未知错误')}\n已达到最大重试次数 ({self._max_retries})，今日不再重试\n⏱️ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        )
             
             return sign_dict
         
@@ -231,7 +271,6 @@ class nodeseeksign(_PluginBase):
                 "success": False,
                 "signed": False,
                 "already_signed": False,
-                "added_chicken": False,
                 "message": ""
             }
             
@@ -315,15 +354,6 @@ class nodeseeksign(_PluginBase):
                         # 其他失败情况
                         result["message"] = f"签到失败: {message}"
                         logger.error(f"签到失败: {message}")
-                    
-                    # 如果签到成功或已签到，且开启了自动加鸡腿功能，则继续执行加鸡腿操作
-                    if (result["success"]) and self._auto_chicken:
-                        chicken_result = self._perform_add_chicken()
-                        if chicken_result.get("success"):
-                            result["added_chicken"] = True
-                            result["message"] += f" | 加鸡腿: {chicken_result.get('message', '成功')}"
-                        else:
-                            result["message"] += f" | 加鸡腿: {chicken_result.get('message', '失败')}"
                 
                 except ValueError:
                     # JSON解析失败
@@ -366,146 +396,6 @@ class nodeseeksign(_PluginBase):
                 return None
         except Exception as e:
             logger.error(f"获取代理设置出错: {str(e)}")
-            return None
-    
-    def _perform_add_chicken(self):
-        """
-        执行加鸡腿操作
-        """
-        try:
-            logger.info("开始执行加鸡腿操作...")
-            
-            # 获取热门帖子ID
-            topic_id = self._get_random_topic_id()
-            if not topic_id:
-                return {"success": False, "message": "未找到合适的帖子"}
-            
-            # 添加鸡腿API
-            headers = {
-                'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-                'origin': "https://www.nodeseek.com",
-                'referer': f"https://www.nodeseek.com/post/{topic_id}",
-                'Cookie': self._cookie
-            }
-            
-            url = f"https://www.nodeseek.com/api/post/{topic_id}/chick"
-            
-            # 获取代理设置
-            proxies = self._get_proxies()
-            
-            # 使用curl_cffi库发送请求以绕过CloudFlare防护
-            if HAS_CURL_CFFI:
-                logger.info("使用curl_cffi绕过CloudFlare防护发送请求")
-                
-                try:
-                    # 创建一个curl_cffi会话
-                    session = curl_requests.Session(impersonate="chrome110")
-                    
-                    # 设置代理（如果有）
-                    if proxies:
-                        # 提取代理URL
-                        http_proxy = proxies.get('http')
-                        if http_proxy:
-                            session.proxies = {"http": http_proxy, "https": http_proxy}
-                    
-                    # 发送POST请求
-                    response = session.post(
-                        url,
-                        headers=headers,
-                        timeout=30
-                    )
-                    
-                except Exception as e:
-                    logger.error(f"curl_cffi请求失败: {str(e)}")
-                    # 回退到普通请求
-                    response = requests.post(url, headers=headers, proxies=proxies, timeout=30)
-            else:
-                # 使用普通requests发送请求
-                response = requests.post(url, headers=headers, proxies=proxies, timeout=30)
-            
-            if response.status_code == 200:
-                try:
-                    response_data = response.json()
-                    logger.info(f"加鸡腿响应: {response_data}")
-                    
-                    if response_data.get('success') == True:
-                        return {"success": True, "message": f"成功给帖子 {topic_id} 加鸡腿"}
-                    else:
-                        return {"success": False, "message": response_data.get('message', '未知原因')}
-                        
-                except ValueError:
-                    return {"success": False, "message": f"解析响应失败: {response.text[:100]}..."}
-            else:
-                return {"success": False, "message": f"请求失败，状态码: {response.status_code}"}
-            
-        except Exception as e:
-            logger.error(f"执行加鸡腿出错: {str(e)}", exc_info=True)
-            return {"success": False, "message": f"执行出错: {str(e)}"}
-    
-    def _get_random_topic_id(self):
-        """
-        获取随机帖子ID
-        """
-        try:
-            # 获取热门帖子列表
-            headers = {
-                'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-                'Cookie': self._cookie
-            }
-            
-            # 从交易区获取帖子
-            url = "https://www.nodeseek.com/api/posts?filter=featured&offset=0&limit=20"
-            
-            # 获取代理设置
-            proxies = self._get_proxies()
-            
-            # 使用curl_cffi库发送请求以绕过CloudFlare防护
-            if HAS_CURL_CFFI:
-                logger.info("使用curl_cffi绕过CloudFlare防护获取帖子列表")
-                
-                try:
-                    # 创建一个curl_cffi会话
-                    session = curl_requests.Session(impersonate="chrome110")
-                    
-                    # 设置代理（如果有）
-                    if proxies:
-                        # 提取代理URL
-                        http_proxy = proxies.get('http')
-                        if http_proxy:
-                            session.proxies = {"http": http_proxy, "https": http_proxy}
-                    
-                    # 发送GET请求
-                    response = session.get(
-                        url,
-                        headers=headers,
-                        timeout=30
-                    )
-                    
-                except Exception as e:
-                    logger.error(f"curl_cffi请求失败: {str(e)}")
-                    # 回退到普通请求
-                    response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
-            else:
-                # 使用普通requests发送请求
-                response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
-            
-            if response.status_code == 200:
-                try:
-                    response_data = response.json()
-                    posts = response_data.get('data', [])
-                    
-                    if posts:
-                        # 随机选择一个帖子
-                        random_post = random.choice(posts)
-                        return random_post.get('_id')
-                    
-                except ValueError:
-                    logger.error(f"解析帖子列表失败: {response.text[:100]}...")
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"获取帖子ID出错: {str(e)}", exc_info=True)
             return None
 
     def _save_sign_history(self, sign_data):
@@ -558,9 +448,6 @@ class nodeseeksign(_PluginBase):
         status = sign_dict.get("status", "未知")
         sign_time = sign_dict.get("date", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         
-        # 获取加鸡腿状态
-        added_chicken = result.get("added_chicken", False)
-        
         # 构建通知文本
         if "签到成功" in status:
             title = "【✅ NodeSeek论坛签到成功】"
@@ -570,16 +457,8 @@ class nodeseeksign(_PluginBase):
                 f"━━━━━━━━━━\n"
                 f"🕐 时间：{sign_time}\n"
                 f"✨ 状态：{status}\n"
+                f"━━━━━━━━━━"
             )
-            
-            # 添加加鸡腿信息
-            if self._auto_chicken:
-                if added_chicken:
-                    text += f"🍗 加鸡腿：成功\n"
-                else:
-                    text += f"🍗 加鸡腿：失败\n"
-                    
-            text += f"━━━━━━━━━━"
             
         elif "已签到" in status:
             title = "【ℹ️ NodeSeek论坛重复签到】"
@@ -758,23 +637,6 @@ class nodeseeksign(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
-                                            'model': 'auto_chicken',
-                                            'label': '自动加鸡腿',
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -816,7 +678,7 @@ class nodeseeksign(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -832,7 +694,7 @@ class nodeseeksign(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -842,6 +704,24 @@ class nodeseeksign(_PluginBase):
                                             'label': '历史保留天数',
                                             'type': 'number',
                                             'placeholder': '30'
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'max_retries',
+                                            'label': '失败重试次数',
+                                            'type': 'number',
+                                            'placeholder': '3'
                                         }
                                     }
                                 ]
@@ -862,7 +742,7 @@ class nodeseeksign(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': f'【使用教程】\n1. 登录NodeSeek论坛网站，按F12打开开发者工具\n2. 在"网络"或"应用"选项卡中复制Cookie\n3. 粘贴Cookie到上方输入框\n4. 设置签到时间，建议早上8点(0 8 * * *)\n5. 启用插件并保存\n\n【功能说明】\n• 随机奖励：开启则使用随机奖励，关闭则使用固定奖励\n• 自动加鸡腿：自动给热门帖子加鸡腿\n• 使用代理：开启则使用系统配置的代理服务器访问NodeSeek\n\n【CloudFlare绕过】\n• curl_cffi库状态: {curl_cffi_status}\n• 如需安装: pip install curl_cffi>=0.5.9'
+                                            'text': f'【使用教程】\n1. 登录NodeSeek论坛网站，按F12打开开发者工具\n2. 在"网络"或"应用"选项卡中复制Cookie\n3. 粘贴Cookie到上方输入框\n4. 设置签到时间，建议早上8点(0 8 * * *)\n5. 启用插件并保存\n\n【功能说明】\n• 随机奖励：开启则使用随机奖励，关闭则使用固定奖励\n• 使用代理：开启则使用系统配置的代理服务器访问NodeSeek\n• 失败重试：设置签到失败后的最大重试次数，将在5-15分钟后随机重试\n\n【CloudFlare绕过】\n• curl_cffi库状态: {curl_cffi_status}\n• 如需安装: pip install curl_cffi>=0.5.9'
                                         }
                                     }
                                 ]
@@ -877,10 +757,10 @@ class nodeseeksign(_PluginBase):
             "onlyonce": False,
             "cookie": "",
             "cron": "0 8 * * *",
-            "auto_chicken": True,
             "random_choice": True,
             "history_days": 30,
-            "use_proxy": True
+            "use_proxy": True,
+            "max_retries": 3
         }
 
     def get_page(self) -> List[dict]:
