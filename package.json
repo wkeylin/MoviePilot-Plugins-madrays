@@ -123,5 +123,19 @@
       "v2.0": "联邦插件重制版，仅支持MPv2.4.5版本以上，低版本请勿更新，更新后请重置插件",
       "v1.0": "首次发布重制版，修复插件列表错误，增加页面和通知"
     }
+  },
+  "TrashClean": {
+    "name": "垃圾文件清理",
+    "description": "自动清理监控目录内的垃圾文件",
+    "labels": "清理,垃圾文件,监控",
+    "version": "1.0",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/clean1.png",
+    "author": "madrays",
+    "level": 1,
+    "v2": true,
+    "history": {
+      "v1.0": "首次发布"
+    }
   }
+
 } 
