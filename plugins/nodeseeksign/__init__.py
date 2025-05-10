@@ -44,7 +44,7 @@ class nodeseeksign(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/nodeseeksign.png"
     # 插件版本
-    plugin_version = "1.1.0"
+    plugin_version = "1.2.0"
     # 插件作者
     plugin_author = "madrays"
     # 作者主页
@@ -68,6 +68,7 @@ class nodeseeksign(_PluginBase):
     _max_retries = 3      # 最大重试次数
     _retry_count = 0      # 当天重试计数
     _scheduled_retry = None  # 计划的重试任务
+    _verify_ssl = False    # 是否验证SSL证书，默认禁用
 
     # 定时器
     _scheduler: Optional[BackgroundScheduler] = None
@@ -89,10 +90,11 @@ class nodeseeksign(_PluginBase):
                 self._history_days = int(config.get("history_days", 30))
                 self._use_proxy = config.get("use_proxy", True)
                 self._max_retries = int(config.get("max_retries", 3))
+                self._verify_ssl = config.get("verify_ssl", False)
                 
                 logger.info(f"配置: enabled={self._enabled}, notify={self._notify}, cron={self._cron}, "
                            f"random_choice={self._random_choice}, history_days={self._history_days}, "
-                           f"use_proxy={self._use_proxy}, max_retries={self._max_retries}")
+                           f"use_proxy={self._use_proxy}, max_retries={self._max_retries}, verify_ssl={self._verify_ssl}")
             
             if self._onlyonce:
                 logger.info("执行一次性签到")
@@ -111,7 +113,8 @@ class nodeseeksign(_PluginBase):
                     "random_choice": self._random_choice,
                     "history_days": self._history_days,
                     "use_proxy": self._use_proxy,
-                    "max_retries": self._max_retries
+                    "max_retries": self._max_retries,
+                    "verify_ssl": self._verify_ssl
                 })
 
                 # 启动任务
@@ -211,7 +214,11 @@ class nodeseeksign(_PluginBase):
                     
                     # 移除之前计划的重试任务（如果有）
                     if self._scheduled_retry:
-                        self._scheduler.remove_job(self._scheduled_retry)
+                        try:
+                            self._scheduler.remove_job(self._scheduled_retry)
+                        except Exception as e:
+                            # 忽略移除不存在任务的错误
+                            logger.warning(f"移除旧任务时出错 (可忽略): {str(e)}")
                     
                     # 添加新的重试任务
                     self._scheduled_retry = f"nodeseek_retry_{int(time.time())}"
@@ -314,16 +321,17 @@ class nodeseeksign(_PluginBase):
                     response = session.post(
                         url,
                         headers=headers,
-                        timeout=30
+                        timeout=30,
+                        verify=self._verify_ssl
                     )
                     
                 except Exception as e:
                     logger.error(f"curl_cffi请求失败: {str(e)}")
                     # 回退到普通请求
-                    response = requests.post(url, headers=headers, proxies=proxies, timeout=30)
+                    response = requests.post(url, headers=headers, proxies=proxies, timeout=30, verify=self._verify_ssl)
             else:
                 # 使用普通requests发送请求
-                response = requests.post(url, headers=headers, proxies=proxies, timeout=30)
+                response = requests.post(url, headers=headers, proxies=proxies, timeout=30, verify=self._verify_ssl)
             
             # 解析响应
             if response.status_code == 200:
@@ -637,6 +645,7 @@ class nodeseeksign(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
+                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -644,6 +653,22 @@ class nodeseeksign(_PluginBase):
                                         'props': {
                                             'model': 'use_proxy',
                                             'label': '使用代理',
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'verify_ssl',
+                                            'label': '验证SSL证书',
                                         }
                                     }
                                 ]
@@ -742,7 +767,7 @@ class nodeseeksign(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': f'【使用教程】\n1. 登录NodeSeek论坛网站，按F12打开开发者工具\n2. 在"网络"或"应用"选项卡中复制Cookie\n3. 粘贴Cookie到上方输入框\n4. 设置签到时间，建议早上8点(0 8 * * *)\n5. 启用插件并保存\n\n【功能说明】\n• 随机奖励：开启则使用随机奖励，关闭则使用固定奖励\n• 使用代理：开启则使用系统配置的代理服务器访问NodeSeek\n• 失败重试：设置签到失败后的最大重试次数，将在5-15分钟后随机重试\n\n【CloudFlare绕过】\n• curl_cffi库状态: {curl_cffi_status}\n• 如需安装: pip install curl_cffi>=0.5.9'
+                                            'text': f'【使用教程】\n1. 登录NodeSeek论坛网站，按F12打开开发者工具\n2. 在"网络"或"应用"选项卡中复制Cookie\n3. 粘贴Cookie到上方输入框\n4. 设置签到时间，建议早上8点(0 8 * * *)\n5. 启用插件并保存\n\n【功能说明】\n• 随机奖励：开启则使用随机奖励，关闭则使用固定奖励\n• 使用代理：开启则使用系统配置的代理服务器访问NodeSeek\n• 验证SSL证书：关闭可能解决SSL连接问题，但会降低安全性\n• 失败重试：设置签到失败后的最大重试次数，将在5-15分钟后随机重试\n\n【CloudFlare绕过】\n• curl_cffi库状态: {curl_cffi_status}\n• 如需安装: pip install curl_cffi>=0.5.9'
                                         }
                                     }
                                 ]
@@ -760,7 +785,8 @@ class nodeseeksign(_PluginBase):
             "random_choice": True,
             "history_days": 30,
             "use_proxy": True,
-            "max_retries": 3
+            "max_retries": 3,
+            "verify_ssl": False
         }
 
     def get_page(self) -> List[dict]:
