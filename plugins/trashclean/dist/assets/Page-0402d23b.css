@@ -106,3 +106,33 @@
   min-width: 40px;
   text-align: right;
 }
+.progress-details {
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+.progress-stat-item {
+  display: flex;
+  align-items: center;
+  margin-right: 16px;
+  margin-bottom: 8px;
+  font-size: 0.875rem;
+}
+.removed-dirs-container {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+.removed-dir-item {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+.removed-dir-item:last-child {
+  border-bottom: none;
+}
+.stats-update-btn {
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+.stats-update-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}

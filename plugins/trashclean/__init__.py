@@ -56,9 +56,9 @@ class TrashCleanConfig(BaseModel):
 class TrashClean(_PluginBase):
     # 插件信息
     plugin_name = "垃圾文件清理"
-    plugin_desc = "自动清理监控目录内的垃圾文件"
+    plugin_desc = "自动清理下载文件夹中的垃圾文件"
     plugin_icon = "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/clean1.png"
-    plugin_version = "1.0"
+    plugin_version = "1.1"
     plugin_author = "madrays"
     author_url = "https://github.com/madrays"
     plugin_config_prefix = "trashclean_"
@@ -84,6 +84,20 @@ class TrashClean(_PluginBase):
     
     # 目录监控数据
     _dir_size_history: Dict[str, Dict[str, Any]] = {}
+    # 目录统计数据
+    _dir_stats_cache: Dict[str, Any] = {}
+    # 清理任务进度
+    _clean_progress: Dict[str, Any] = {
+        "running": False,
+        "total_dirs": 0,
+        "processed_dirs": 0,
+        "current_dir": "",
+        "removed_dirs": [],
+        "start_time": None,
+        "status": "idle",
+        "message": "",
+        "percent": 0
+    }
 
     def init_plugin(self, config: dict = None):
         """初始化插件"""
@@ -146,6 +160,13 @@ class TrashClean(_PluginBase):
         
         result = self._clean_trash_files(manual_run)
         
+        # 修复可能的对象引用问题：确保返回的是深拷贝数据
+        if result and isinstance(result, dict) and "removed_dirs" in result:
+            # 创建结果的深拷贝
+            import copy
+            result_copy = copy.deepcopy(result)
+            return result_copy
+        
         return result
 
     def _clean_trash_files(self, manual_run: bool = False) -> Dict[str, Any]:
@@ -154,7 +175,21 @@ class TrashClean(_PluginBase):
         
         if not self._monitor_paths:
             logger.warning(f"{log_prefix}: 未设置监控路径，跳过清理")
+            self._update_clean_progress(status="error", message="未设置监控路径", percent=100)
             return {"status": "error", "message": "未设置监控路径"}
+        
+        # 初始化进度数据
+        self._clean_progress = {
+            "running": True,
+            "total_dirs": 0,
+            "processed_dirs": 0,
+            "current_dir": "",
+            "removed_dirs": [],
+            "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "running",
+            "message": "开始清理任务...",
+            "percent": 0
+        }
         
         # 初始化结果
         result = {
@@ -166,94 +201,153 @@ class TrashClean(_PluginBase):
             "total_freed_space": 0
         }
         
-        # 确保我们首先加载历史数据
-        self._load_history_data()
-        
-        # 更新目录大小历史
-        logger.info(f"{log_prefix}: 开始更新目录大小历史数据")
-        self._update_dir_size_history()
-        
-        # 处理每个监控路径
-        for monitor_path in self._monitor_paths:
-            if not monitor_path or not os.path.exists(monitor_path):
-                logger.warning(f"{log_prefix}: 监控路径不存在: {monitor_path}")
-                continue
+        try:
+            # 确保我们首先加载历史数据
+            self._load_history_data()
             
-            logger.info(f"{log_prefix}: 开始处理监控路径: {monitor_path}")
+            # 更新目录大小历史
+            logger.info(f"{log_prefix}: 开始更新目录大小历史数据")
+            self._update_clean_progress(message="更新目录大小历史数据...", percent=5)
+            self._update_dir_size_history()
             
-            # 遍历目录处理垃圾文件
-            for root, dirs, files in os.walk(monitor_path, topdown=False):
-                # 跳过排除目录
-                if self._is_excluded_dir(root):
+            # 计算总目录数
+            self._update_clean_progress(message="扫描目录结构...", percent=10)
+            total_dirs = 0
+            for monitor_path in self._monitor_paths:
+                if not os.path.exists(monitor_path):
+                    continue
+                for _ in os.walk(monitor_path):
+                    total_dirs += 1
+            
+            self._clean_progress["total_dirs"] = total_dirs
+            
+            # 处理每个监控路径
+            processed_dirs = 0
+            for monitor_path in self._monitor_paths:
+                if not monitor_path or not os.path.exists(monitor_path):
+                    logger.warning(f"{log_prefix}: 监控路径不存在: {monitor_path}")
                     continue
                 
-                # 处理空目录
-                if self._empty_dir_cleanup and not files and not dirs:
-                    # 主目录不删除
-                    if root != monitor_path:
-                        if self._remove_directory(root):
-                            result["removed_dirs"].append({"path": root, "type": "empty", "size": 0})
-                            result["removed_empty_dirs_count"] += 1
-                    continue
+                logger.info(f"{log_prefix}: 开始处理监控路径: {monitor_path}")
+                self._update_clean_progress(
+                    message=f"处理监控路径: {monitor_path}",
+                    current_dir=monitor_path,
+                    percent=10 + (processed_dirs / (total_dirs or 1)) * 80
+                )
                 
-                # 计算目录大小
-                dir_size_bytes = self._get_directory_size(root)
-                dir_size_mb = dir_size_bytes / (1024 * 1024)
-                
-                # 处理小体积目录
-                if self._small_dir_cleanup and dir_size_mb <= self._small_dir_max_size and root != monitor_path:
-                    if self._remove_directory(root):
-                        result["removed_dirs"].append({"path": root, "type": "small", "size": dir_size_mb})
-                        result["removed_small_dirs_count"] += 1
-                        result["total_freed_space"] += dir_size_mb
-                    continue
-                
-                # 处理体积减少的目录
-                if self._size_reduction_cleanup and root in self._dir_size_history:
-                    logger.debug(f"{log_prefix}: 检查目录是否体积减少: {root}")
-                    previous_size = self._dir_size_history[root].get("size", 0)
+                # 遍历目录处理垃圾文件
+                for root, dirs, files in os.walk(monitor_path, topdown=False):
+                    processed_dirs += 1
                     
-                    # 只处理有历史记录的目录
-                    if previous_size > 0 and dir_size_bytes > 0:
-                        # 计算体积减少百分比
-                        reduction_percent = ((previous_size - dir_size_bytes) / previous_size) * 100
+                    # 更新进度
+                    self._update_clean_progress(
+                        processed_dirs=processed_dirs,
+                        current_dir=root,
+                        percent=10 + (processed_dirs / (total_dirs or 1)) * 80
+                    )
+                    
+                    # 跳过排除目录
+                    if self._is_excluded_dir(root):
+                        continue
+                    
+                    # 处理空目录
+                    if self._empty_dir_cleanup and not files and not dirs:
+                        # 主目录不删除
+                        if root != monitor_path:
+                            if self._remove_directory(root):
+                                dir_info = {"path": root, "type": "empty", "size": 0}
+                                result["removed_dirs"].append(dir_info)
+                                self._clean_progress["removed_dirs"].append(dir_info)
+                                result["removed_empty_dirs_count"] += 1
+                        continue
+                    
+                    # 计算目录大小
+                    dir_size_bytes = self._get_directory_size(root)
+                    dir_size_mb = dir_size_bytes / (1024 * 1024)
+                    
+                    # 处理小体积目录
+                    if self._small_dir_cleanup and dir_size_mb <= self._small_dir_max_size and root != monitor_path:
+                        if self._remove_directory(root):
+                            dir_info = {"path": root, "type": "small", "size": dir_size_mb}
+                            result["removed_dirs"].append(dir_info)
+                            self._clean_progress["removed_dirs"].append(dir_info)
+                            result["removed_small_dirs_count"] += 1
+                            result["total_freed_space"] += dir_size_mb
+                        continue
+                    
+                    # 处理体积减少的目录
+                    if self._size_reduction_cleanup and root in self._dir_size_history:
+                        logger.debug(f"{log_prefix}: 检查目录是否体积减少: {root}")
+                        previous_size = self._dir_size_history[root].get("size", 0)
                         
-                        logger.debug(f"{log_prefix}: 目录 {root} 体积变化: 从 {previous_size/(1024*1024):.2f}MB 变为 {dir_size_mb:.2f}MB, 变化率: {reduction_percent:.2f}%")
-                        
-                        if previous_size > dir_size_bytes and reduction_percent >= self._size_reduction_threshold:
-                            logger.info(f"{log_prefix}: 目录 {root} 体积减少 {reduction_percent:.2f}%, 超过阈值 {self._size_reduction_threshold}%, 将被清理")
+                        # 只处理有历史记录的目录
+                        if previous_size > 0 and dir_size_bytes > 0:
+                            # 计算体积减少百分比
+                            reduction_percent = ((previous_size - dir_size_bytes) / previous_size) * 100
                             
-                            if root != monitor_path and self._remove_directory(root):
-                                result["removed_dirs"].append({
-                                    "path": root, 
-                                    "type": "size_reduction", 
-                                    "size": dir_size_mb,
-                                    "reduction_percent": reduction_percent
-                                })
-                                result["removed_size_reduction_dirs_count"] += 1
-                                result["total_freed_space"] += dir_size_mb
+                            logger.debug(f"{log_prefix}: 目录 {root} 体积变化: 从 {previous_size/(1024*1024):.2f}MB 变为 {dir_size_mb:.2f}MB, 变化率: {reduction_percent:.2f}%")
+                            
+                            if previous_size > dir_size_bytes and reduction_percent >= self._size_reduction_threshold:
+                                logger.info(f"{log_prefix}: 目录 {root} 体积减少 {reduction_percent:.2f}%, 超过阈值 {self._size_reduction_threshold}%, 将被清理")
                                 
-                                # 从历史记录中移除已删除的目录
-                                if root in self._dir_size_history:
-                                    logger.debug(f"{log_prefix}: 从历史记录中移除已删除的目录: {root}")
-                                    del self._dir_size_history[root]
-                                
-                                continue
-        
-        # 保存更新后的历史数据
-        self._save_history_data()
-        
-        # 发送通知
-        if self._notify and (result["removed_empty_dirs_count"] > 0 or 
-                            result["removed_small_dirs_count"] > 0 or 
-                            result["removed_size_reduction_dirs_count"] > 0):
-            self._send_notify(result)
-        
-        # 记录结果到历史记录
-        self._save_clean_result(result)
-        
-        logger.info(f"{log_prefix}: 清理任务完成，共清理 {len(result['removed_dirs'])} 个目录，释放 {result['total_freed_space']:.2f}MB 空间")
-        return result
+                                if root != monitor_path and self._remove_directory(root):
+                                    dir_info = {
+                                        "path": root, 
+                                        "type": "size_reduction", 
+                                        "size": dir_size_mb,
+                                        "reduction_percent": reduction_percent
+                                    }
+                                    result["removed_dirs"].append(dir_info)
+                                    self._clean_progress["removed_dirs"].append(dir_info)
+                                    result["removed_size_reduction_dirs_count"] += 1
+                                    result["total_freed_space"] += dir_size_mb
+                                    
+                                    # 从历史记录中移除已删除的目录
+                                    if root in self._dir_size_history:
+                                        logger.debug(f"{log_prefix}: 从历史记录中移除已删除的目录: {root}")
+                                        del self._dir_size_history[root]
+                                    
+                                    continue
+            
+            # 保存更新后的历史数据
+            self._update_clean_progress(message="保存历史数据...", percent=90)
+            self._save_history_data()
+            
+            # 发送通知
+            if self._notify and (result["removed_empty_dirs_count"] > 0 or 
+                                result["removed_small_dirs_count"] > 0 or 
+                                result["removed_size_reduction_dirs_count"] > 0):
+                self._update_clean_progress(message="发送通知...", percent=95)
+                self._send_notify(result)
+            
+            # 记录结果到历史记录
+            self._update_clean_progress(message="保存清理结果...", percent=98)
+            self._save_clean_result(result)
+            
+            # 更新目录统计并保存
+            self._update_clean_progress(message="更新目录统计...", percent=99)
+            self._update_and_save_dir_stats()
+            
+            # 标记清理完成
+            self._update_clean_progress(
+                running=False,
+                status="success",
+                message=f"清理任务完成！共清理 {len(result['removed_dirs'])} 个目录，释放 {result['total_freed_space']:.2f}MB 空间",
+                percent=100
+            )
+            
+            logger.info(f"{log_prefix}: 清理任务完成，共清理 {len(result['removed_dirs'])} 个目录，释放 {result['total_freed_space']:.2f}MB 空间")
+            return result
+            
+        except Exception as e:
+            logger.error(f"{log_prefix}: 清理过程发生错误: {str(e)}", exc_info=True)
+            self._update_clean_progress(
+                running=False,
+                status="error",
+                message=f"清理过程发生错误: {str(e)}",
+                percent=100
+            )
+            return {"status": "error", "message": f"清理过程发生错误: {str(e)}"}
 
     def _check_downloaders_running(self) -> bool:
         """检查下载器是否正在执行任务"""
@@ -411,6 +505,35 @@ class TrashClean(_PluginBase):
         """保存历史数据"""
         try:
             history_file = self._plugin_dir / "history_data.json"
+            
+            # 清理历史数据：只保留当前监控路径下的目录数据
+            if self._dir_size_history:
+                logger.info(f"{self.plugin_name}: 开始清理历史数据，当前共 {len(self._dir_size_history)} 条记录")
+                
+                # 获取当前所有监控路径
+                current_monitored_paths = []
+                for monitor_path in self._monitor_paths:
+                    if os.path.exists(monitor_path):
+                        current_monitored_paths.append(os.path.normpath(monitor_path))
+                        # 遍历该监控路径下的所有子目录
+                        for root, _, _ in os.walk(monitor_path):
+                            current_monitored_paths.append(os.path.normpath(root))
+                
+                # 标准化路径格式
+                current_monitored_paths = [path.replace('\\', '/') for path in current_monitored_paths]
+                
+                # 仅保留当前监控路径下的目录数据
+                new_history = {}
+                for path, data in self._dir_size_history.items():
+                    norm_path = os.path.normpath(path).replace('\\', '/')
+                    if any(norm_path.startswith(monitored_path) for monitored_path in current_monitored_paths):
+                        new_history[path] = data
+                
+                # 更新历史数据
+                removed_count = len(self._dir_size_history) - len(new_history)
+                self._dir_size_history = new_history
+                logger.info(f"{self.plugin_name}: 历史数据清理完成，共移除 {removed_count} 条不再监控的路径数据，保留 {len(self._dir_size_history)} 条记录")
+            
             import json
             with open(history_file, "w", encoding="utf-8") as f:
                 json.dump(self._dir_size_history, f, ensure_ascii=False, indent=2)
@@ -561,6 +684,19 @@ class TrashClean(_PluginBase):
                         next_run_time = job.next_run_time.strftime("%Y-%m-%d %H:%M:%S")
                     break
         
+        # 获取清理历史记录
+        cleaning_history = []
+        try:
+            history_file = self._plugin_dir / "clean_history.json"
+            if history_file.exists():
+                import json
+                with open(history_file, "r", encoding="utf-8") as f:
+                    cleaning_history = json.load(f)
+                # 限制传递的历史记录数量
+                cleaning_history = cleaning_history[:5]
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 读取清理历史记录失败: {str(e)}")
+        
         return {
             "enabled": self._enable,
             "cron": self._cron,
@@ -572,6 +708,7 @@ class TrashClean(_PluginBase):
             "invalid_paths_count": len(invalid_paths),
             "invalid_paths": invalid_paths,
             "dir_history_count": len(self._dir_size_history),
+            "cleaning_history": cleaning_history,
             "cleanup_rules": {
                 "empty_dir": self._empty_dir_cleanup,
                 "small_dir": {
@@ -585,8 +722,12 @@ class TrashClean(_PluginBase):
             }
         }
     
-    def _get_monitor_path_stats(self) -> List[Dict[str, Any]]:
+    def _get_monitor_path_stats(self, use_cache: bool = True) -> List[Dict[str, Any]]:
         """获取监控路径统计"""
+        # 如果使用缓存且有缓存数据，则返回缓存
+        if use_cache and self._dir_stats_cache and "stats" in self._dir_stats_cache:
+            return self._dir_stats_cache["stats"]
+            
         result = []
         for path in self._monitor_paths:
             if not os.path.exists(path):
@@ -961,6 +1102,20 @@ class TrashClean(_PluginBase):
                 "summary": "获取监控路径统计"
             },
             {
+                "path": "/stats_cache",
+                "endpoint": self._get_dir_stats_cache,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取统计缓存信息"
+            },
+            {
+                "path": "/update_stats",
+                "endpoint": self._update_and_save_dir_stats,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "更新目录统计数据"
+            },
+            {
                 "path": "/browse",
                 "endpoint": self._get_browse,
                 "methods": ["GET"],
@@ -980,6 +1135,20 @@ class TrashClean(_PluginBase):
                 "methods": ["GET"],
                 "auth": "bear",
                 "summary": "获取历史记录"
+            },
+            {
+                "path": "/clean_progress",
+                "endpoint": self._get_clean_progress,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取清理进度"
+            },
+            {
+                "path": "/latest_clean_result",
+                "endpoint": self._get_latest_clean_result,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取最新清理结果"
             }
         ]
 
@@ -996,14 +1165,18 @@ class TrashClean(_PluginBase):
                 return
                 
             # 构造历史记录条目
+            now = datetime.now(tz=pytz.timezone(settings.TZ))
+            formatted_time = now.strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 不对路径长度进行截断，保留完整路径信息
             clean_record = {
-                "timestamp": datetime.now(tz=pytz.timezone(settings.TZ)).strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": formatted_time,
                 "removed_dirs": result.get("removed_dirs", []),
                 "removed_empty_dirs_count": result.get("removed_empty_dirs_count", 0),
                 "removed_small_dirs_count": result.get("removed_small_dirs_count", 0),
                 "removed_size_reduction_dirs_count": result.get("removed_size_reduction_dirs_count", 0),
                 "total_freed_space": result.get("total_freed_space", 0),
-                "last_update": datetime.now(tz=pytz.timezone(settings.TZ)).strftime("%Y-%m-%d %H:%M:%S")
+                "last_update": formatted_time
             }
             
             # 从文件读取历史记录
@@ -1022,17 +1195,264 @@ class TrashClean(_PluginBase):
             # 添加新记录到历史
             clean_history.insert(0, clean_record)
             
-            # 限制历史记录数量，保留最近的20条
-            clean_history = clean_history[:20]
+            # 限制历史记录数量，保留最近的30条
+            max_history_records = 30
+            if len(clean_history) > max_history_records:
+                logger.info(f"{self.plugin_name}: 清理历史记录超过{max_history_records}条，进行精简")
+                clean_history = clean_history[:max_history_records]
             
             # 保存历史记录
             try:
                 import json
                 with open(history_file, "w", encoding="utf-8") as f:
                     json.dump(clean_history, f, ensure_ascii=False, indent=2)
-                logger.info(f"{self.plugin_name}: 成功保存清理历史记录")
+                logger.info(f"{self.plugin_name}: 成功保存清理历史记录，时间: {formatted_time}")
+                
+                # 同时将最新的清理结果单独保存，便于持久化显示
+                # 确保result中包含timestamp字段
+                result_with_timestamp = result.copy()
+                result_with_timestamp["timestamp"] = formatted_time
+                
+                latest_result_file = self._plugin_dir / "latest_clean_result.json"
+                with open(latest_result_file, "w", encoding="utf-8") as f:
+                    json.dump(result_with_timestamp, f, ensure_ascii=False, indent=2)
+                logger.info(f"{self.plugin_name}: 成功保存最新清理结果")
+                
             except Exception as e:
                 logger.error(f"{self.plugin_name}: 保存清理历史记录失败: {str(e)}")
                 
         except Exception as e:
-            logger.error(f"{self.plugin_name}: 保存清理结果到历史记录失败: {str(e)}") 
+            logger.error(f"{self.plugin_name}: 保存清理结果到历史记录失败: {str(e)}")
+
+    def _update_clean_progress(self, running=None, total_dirs=None, processed_dirs=None, 
+                             current_dir=None, removed_dirs=None, status=None, 
+                             message=None, percent=None):
+        """更新清理进度信息"""
+        if running is not None:
+            self._clean_progress["running"] = running
+        if total_dirs is not None:
+            self._clean_progress["total_dirs"] = total_dirs
+        if processed_dirs is not None:
+            self._clean_progress["processed_dirs"] = processed_dirs
+        if current_dir is not None:
+            self._clean_progress["current_dir"] = current_dir
+        if removed_dirs is not None:
+            self._clean_progress["removed_dirs"] = removed_dirs
+        if status is not None:
+            self._clean_progress["status"] = status
+        if message is not None:
+            self._clean_progress["message"] = message
+        if percent is not None:
+            self._clean_progress["percent"] = percent
+    
+    def _get_clean_progress(self) -> Dict[str, Any]:
+        """获取清理进度"""
+        return self._clean_progress
+        
+    def _update_and_save_dir_stats(self):
+        """更新并保存目录统计"""
+        try:
+            # 获取当前时间
+            now = datetime.now(tz=pytz.timezone(settings.TZ))
+            formatted_time = now.strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 初始化进度数据
+            progress_data = {
+                "status": "running",
+                "message": "开始扫描目录...",
+                "progress": 0,
+                "last_update": formatted_time
+            }
+            
+            # 记录开始时间
+            start_time = time.time()
+            
+            # 获取所有需要扫描的目录
+            total_dirs = 0
+            valid_paths = []
+            
+            # 先检查哪些路径存在
+            for monitor_path in self._monitor_paths:
+                if os.path.exists(monitor_path):
+                    valid_paths.append(monitor_path)
+            
+            if not valid_paths:
+                logger.warning(f"{self.plugin_name}: 没有有效的监控路径")
+                return {
+                    "stats": [],
+                    "last_update": formatted_time,
+                    "status": "error",
+                    "message": "没有有效的监控路径"
+                }
+            
+            # 统计总目录数，用于进度计算
+            logger.info(f"{self.plugin_name}: 开始统计目录总数...")
+            progress_data["message"] = "统计目录总数..."
+            progress_data["progress"] = 5
+            self._dir_stats_cache = progress_data.copy()
+            
+            for path in valid_paths:
+                for _ in os.walk(path):
+                    total_dirs += 1
+                    
+            logger.info(f"{self.plugin_name}: 共发现 {total_dirs} 个目录")
+            
+            # 初始化结果数组
+            result = []
+            processed_dirs = 0
+            
+            # 处理每个监控路径
+            for path in valid_paths:
+                # 更新进度
+                processed_percentage = 10 + (processed_dirs / (total_dirs or 1)) * 80
+                progress_data["message"] = f"扫描路径: {path}"
+                progress_data["progress"] = int(processed_percentage)
+                self._dir_stats_cache = progress_data.copy()
+                
+                logger.info(f"{self.plugin_name}: 开始处理监控路径: {path}")
+                
+                # 统计目录信息
+                try:
+                    # 计算总大小
+                    total_size = self._get_directory_size(path)
+                    
+                    # 统计文件和目录数量
+                    file_count = 0
+                    dir_count = 0
+                    
+                    for root, dirs, files in os.walk(path):
+                        processed_dirs += 1
+                        dir_count += len(dirs)
+                        file_count += len(files)
+                        
+                        # 定期更新进度
+                        if processed_dirs % 10 == 0:
+                            processed_percentage = 10 + (processed_dirs / (total_dirs or 1)) * 80
+                            progress_data["message"] = f"扫描目录: {root}"
+                            progress_data["progress"] = int(processed_percentage)
+                            self._dir_stats_cache = progress_data.copy()
+                    
+                    # 添加到结果
+                    result.append({
+                        "path": path,
+                        "exists": True,
+                        "status": "valid",
+                        "total_size_bytes": total_size,
+                        "total_size_mb": total_size / (1024 * 1024),
+                        "file_count": file_count,
+                        "dir_count": dir_count
+                    })
+                    
+                except Exception as e:
+                    result.append({
+                        "path": path,
+                        "exists": True,
+                        "status": "error",
+                        "error": str(e)
+                    })
+                    logger.error(f"{self.plugin_name}: 统计目录 {path} 时出错: {str(e)}")
+            
+            # 统计完成，更新进度
+            progress_data["message"] = "保存统计数据..."
+            progress_data["progress"] = 90
+            self._dir_stats_cache = progress_data.copy()
+            
+            # 更新最终结果
+            elapsed_time = time.time() - start_time
+            logger.info(f"{self.plugin_name}: 目录统计完成，耗时 {elapsed_time:.2f} 秒")
+            
+            # 更新缓存对象
+            self._dir_stats_cache = {
+                "stats": result,
+                "last_update": formatted_time,
+                "status": "success",
+                "message": f"统计完成，共 {len(result)} 个路径，耗时 {elapsed_time:.2f} 秒",
+                "progress": 100
+            }
+            
+            # 保存到文件
+            stats_file = self._plugin_dir / "dir_stats_cache.json"
+            try:
+                import json
+                with open(stats_file, "w", encoding="utf-8") as f:
+                    json.dump(self._dir_stats_cache, f, ensure_ascii=False, indent=2)
+                logger.info(f"{self.plugin_name}: 目录统计数据已保存，更新时间: {formatted_time}")
+            except Exception as e:
+                logger.error(f"{self.plugin_name}: 保存目录统计数据失败: {str(e)}")
+            
+            # 返回统计数据
+            return self._dir_stats_cache
+                
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 更新目录统计数据失败: {str(e)}")
+            return {
+                "stats": [], 
+                "last_update": "",
+                "status": "error",
+                "message": f"更新目录统计数据失败: {str(e)}",
+                "progress": 0
+            }
+    
+    def _load_dir_stats_cache(self):
+        """加载目录统计缓存"""
+        try:
+            stats_file = self._plugin_dir / "dir_stats_cache.json"
+            if stats_file.exists():
+                import json
+                with open(stats_file, "r", encoding="utf-8") as f:
+                    self._dir_stats_cache = json.load(f)
+                logger.info(f"{self.plugin_name}: 已加载目录统计缓存数据")
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 加载目录统计缓存失败: {str(e)}")
+            self._dir_stats_cache = {
+                "stats": [],
+                "last_update": ""
+            } 
+
+    def _get_latest_clean_result(self) -> Dict[str, Any]:
+        """获取最新清理结果"""
+        try:
+            # 尝试读取最新清理结果文件
+            latest_result_file = self._plugin_dir / "latest_clean_result.json"
+            if latest_result_file.exists():
+                import json
+                with open(latest_result_file, "r", encoding="utf-8") as f:
+                    result = json.load(f)
+                logger.debug(f"{self.plugin_name}: 成功读取最新清理结果")
+                return result
+            else:
+                logger.debug(f"{self.plugin_name}: 未找到最新清理结果文件")
+                # 返回空结果而不是None，确保格式一致
+                return {
+                    "status": "success",
+                    "removed_dirs": [],
+                    "removed_empty_dirs_count": 0,
+                    "removed_small_dirs_count": 0,
+                    "removed_size_reduction_dirs_count": 0,
+                    "total_freed_space": 0
+                }
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 获取最新清理结果失败: {str(e)}")
+            # 出错时也返回空结果而不是None
+            return {
+                "status": "error",
+                "message": f"获取清理结果失败: {str(e)}",
+                "removed_dirs": [],
+                "removed_empty_dirs_count": 0,
+                "removed_small_dirs_count": 0,
+                "removed_size_reduction_dirs_count": 0,
+                "total_freed_space": 0
+            } 
+
+    def _get_dir_stats_cache(self) -> Dict[str, Any]:
+        """获取目录统计缓存信息"""
+        try:
+            # 如果未加载缓存，尝试从文件加载
+            if not self._dir_stats_cache:
+                self._load_dir_stats_cache()
+                
+            # 返回缓存数据
+            return self._dir_stats_cache or {"stats": [], "last_update": ""}
+        except Exception as e:
+            logger.error(f"{self.plugin_name}: 获取目录统计缓存失败: {str(e)}")
+            return {"stats": [], "last_update": ""} 
