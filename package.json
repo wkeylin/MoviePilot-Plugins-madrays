@@ -138,6 +138,19 @@
       "v1.1": "优化性能及体验",
       "v1.0": "首次发布"
     }
+  },
+  "p1115strmhelper": {
+    "name": "115网盘STRM助手VUE",
+    "description": "115网盘STRM生成一条龙服务",
+    "labels": "STRM,115,网盘",
+    "version": "2.2.2",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/115.png",
+    "author": "madrays",
+    "level": 1,
+    "v2": true,
+    "history": {
+      "v2.2.2": "测试"
+    }
   }
 
 } 

@@ -1,0 +1,74 @@
+
+.path-selector[data-v-2ee7df4e] {
+  flex: 1;
+}
+.config-card[data-v-2ee7df4e] {
+  box-shadow: none !important;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+.config-card[data-v-2ee7df4e]:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08) !important;
+}
+.tab-content[data-v-2ee7df4e] {
+  min-height: 200px;
+}
+
+/* 多彩标签页 */
+
+/* 多彩开关 */
+
+/* 美化卡片标题 */
+[data-v-2ee7df4e] .bg-primary-lighten-5 {
+  background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.1), rgba(var(--v-theme-primary), 0.05)) !important;
+}
+
+/* 多彩表单元素 */
+
+/* 美化二维码对话框 */
+
+/* 美化芯片 */
+
+/* 美化按钮 */
+
+/* 统一字体 */
+
+/* 统一字体大小 */
+[data-v-2ee7df4e] .text-caption {
+  font-size: 0.8rem !important;
+  line-height: 1.4;
+}
+[data-v-2ee7df4e] .text-subtitle-1 {
+  font-size: 1rem !important;
+  line-height: 1.5;
+  font-weight: 500;
+}
+[data-v-2ee7df4e] .text-body-1 {
+  font-size: 0.95rem !important;
+  line-height: 1.6;
+}
+[data-v-2ee7df4e] .text-body-2 {
+  font-size: 0.85rem !important;
+  line-height: 1.5;
+}
+
+/* 美化分区标题 */
+.section-title[data-v-2ee7df4e] {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(var(--v-theme-primary), 1);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  letter-spacing: 0.5px;
+}
+.section-title[data-v-2ee7df4e]:before {
+  content: '';
+  height: 14px;
+  width: 3px;
+  background: linear-gradient(to bottom, rgba(var(--v-theme-primary), 1), rgba(var(--v-theme-info), 0.7));
+  margin-right: 8px;
+  border-radius: 2px;
+}
