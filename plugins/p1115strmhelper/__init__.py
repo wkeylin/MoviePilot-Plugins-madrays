@@ -45,10 +45,6 @@ from app.chain.media import MediaChain
 from app.helper.mediaserver import MediaServerHelper
 from app.utils.system import SystemUtils
 
-# 新增导入 (如果不存在)
-from app.db.systemconfig_oper import SystemConfigOper
-from app.schemas.types import SystemConfigKey
-
 
 p1115strmhelper_lock = threading.Lock()
 
@@ -522,15 +518,15 @@ class ShareStrmHelper:
 
 class P1115StrmHelper(_PluginBase):
     # 插件名称
-    plugin_name = "115网盘STRM助手VUE"
+    plugin_name = "VUE-115网盘STRM助手"
     # 插件描述
     plugin_desc = "115网盘STRM生成一条龙服务"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png"
     # 插件版本
-    plugin_version = "9.9.9"
+    plugin_version = "6.6.6"
     # 插件作者
-    plugin_author = "DDSRem"
+    plugin_author = "VUE测试版"
     # 作者主页
     author_url = "https://github.com/DDSRem"
     # 插件配置项ID前缀
@@ -596,22 +592,6 @@ class P1115StrmHelper(_PluginBase):
     monitor_stop_event = None
     monitor_life_thread = None
 
-    def __init__(self):
-        super().__init__() # 调用基类构造函数
-        logger.error(f"P115 DEBUG CONSTRUCTOR: {self.__class__.__name__} instance CREATED.")
-        # 初始化在 init_plugin 中会用到的实例变量，防止 AttributeError
-        self.mediaserver_helper = None
-        self.transferchain = None
-        self.mediachain = None
-        self.id_path_cache = None
-        self.cache_delete_pan_transfer_list = [] # 初始化为空列表
-        self.cache_creata_pan_transfer_list = [] # 初始化为空列表
-        self._client = None
-        self._scheduler = None
-        # self.monitor_stop_event 已经作为类变量初始化为 None，此处无需重复
-        # self.monitor_life_thread 已经作为类变量初始化为 None，此处无需重复
-        # _event 也是类变量
-
     # 移除暂存登录 account 的字典
     # _login_accounts: Dict[str, str] = {}
 
@@ -623,23 +603,6 @@ class P1115StrmHelper(_PluginBase):
         """
         初始化插件
         """
-        try:
-            # 新增日志：检查插件是否在全局已安装插件列表中
-            # 获取 SystemConfigOper 实例
-            # (假设 MoviePilot 依赖注入或单例模式使得可以直接实例化)
-            _system_config_oper = SystemConfigOper()
-            user_installed_plugins = _system_config_oper.get(SystemConfigKey.UserInstalledPlugins) or []
-            logger.error(f"P115 DEBUG CORE CHECK: UserInstalledPlugins from SystemConfig: {user_installed_plugins}")
-            if self.__class__.__name__ not in user_installed_plugins:
-                logger.error(f"P115 DEBUG CORE CHECK: {self.__class__.__name__} is NOT in UserInstalledPlugins. This is likely the root cause for API not registering.")
-            else:
-                logger.error(f"P115 DEBUG CORE CHECK: {self.__class__.__name__} IS in UserInstalledPlugins.")
-        except Exception as e_core_check:
-            logger.error(f"P115 DEBUG CORE CHECK: Error checking UserInstalledPlugins: {str(e_core_check)}")
-            # 即使检查出错，也继续尝试初始化插件的其余部分
-        
-        # 原有的 logger.error(f"P115 DEBUG STAGE 0: init_plugin called. Received config: {config is not None}")
-        self.debug_log(f"STAGE 0: init_plugin called. Received config: {config is not None}")
         self.mediaserver_helper = MediaServerHelper()
         self.transferchain = TransferChain()
         self.mediachain = MediaChain()
@@ -786,16 +749,7 @@ class P1115StrmHelper(_PluginBase):
                 )
                 self.monitor_life_thread.start()
 
-        # 在 init_plugin 的最后添加 hasattr 检查
-        has_get_api_method = hasattr(self, 'get_api')
-        logger.error(f"P115 DEBUG AT END OF INIT_PLUGIN: hasattr(self, 'get_api') is {has_get_api_method}")
-        if not has_get_api_method:
-            logger.error(f"P115 DEBUG CRITICAL: Instance does NOT have 'get_api' method at the end of init_plugin!")
-        else:
-            logger.error(f"P115 DEBUG INFO: Instance DOES have 'get_api' method at the end of init_plugin.")
-
     def get_state(self) -> bool:
-        logger.error(f"P115 DEBUG: get_state() called. self._enabled is: {self._enabled}. Returning: {self._enabled}")
         return self._enabled
 
     @property
@@ -945,6 +899,13 @@ class P1115StrmHelper(_PluginBase):
                 "methods": ["GET"],
                 "auth": "bear",
                 "summary": "检查二维码状态"
+            },
+            {
+                "path": "/redirect_url",
+                "endpoint": self.redirect_url,
+                "methods": ["GET", "POST", "HEAD"],
+                "summary": "302跳转",
+                "description": "115网盘302跳转"
             }
         ]
 
