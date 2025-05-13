@@ -71,7 +71,7 @@ let refreshTimer = null;
 
 // 获取插件ID函数 - 返回固定的插件类名
 const getPluginId = () => {
-  return "P115StrmHelper";  // 必须与后端插件类名完全匹配
+  return "P1115StrmHelper";  // 必须与后端插件类名完全匹配
 };
 
 // 获取数据的函数
@@ -332,6 +332,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Dashboard = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-d1fa0cd1"]]);
+const Dashboard = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-1add808e"]]);
 
 export { Dashboard as default };

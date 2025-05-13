@@ -51,7 +51,7 @@ const _hoisted_28 = { class: "text-caption mt-2 text-grey" };
 const {ref,reactive,computed,onMounted,watch} = await importShared('vue');
 
 
-const PLUGIN_ID = "P115StrmHelper";
+const PLUGIN_ID = "P1115StrmHelper";
 
 // 状态变量
 
@@ -2469,6 +2469,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-2ee7df4e"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-0a20dc2e"]]);
 
 export { Config as default };

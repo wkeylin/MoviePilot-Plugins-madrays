@@ -109,7 +109,7 @@ const getStatus = async () => {
   
   try {
     // 获取插件ID
-    const pluginId = "P115StrmHelper";
+    const pluginId = "P1115StrmHelper";
     
     // 调用API获取状态
     const result = await props.api.get(`plugin/${pluginId}/get_status`);
@@ -207,7 +207,7 @@ const triggerFullSync = async () => {
     }
     
     // 获取插件ID
-    const pluginId = "P115StrmHelper";
+    const pluginId = "P1115StrmHelper";
     
     // 调用API触发全量同步
     const result = await props.api.post(`plugin/${pluginId}/full_sync`);
@@ -351,7 +351,7 @@ const loadDirContent = async () => {
     // 115网盘目录浏览
     else {
       // 获取插件ID
-      const pluginId = "P115StrmHelper";
+      const pluginId = "P1115StrmHelper";
       
       // 检查cookie是否已设置
       if (!props.initialConfig?.cookies || props.initialConfig?.cookies.trim() === '') {
@@ -456,7 +456,7 @@ const executeShareSync = async () => {
     }
     
     // 获取插件ID
-    const pluginId = "P115StrmHelper";
+    const pluginId = "P1115StrmHelper";
     
     // 首先保存配置
     if (props.initialConfig) {
@@ -1757,6 +1757,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-ba3ed81d"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-6de43ad3"]]);
 
 export { Page as default };

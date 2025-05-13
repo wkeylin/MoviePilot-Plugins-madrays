@@ -640,7 +640,7 @@ const props = defineProps({
 const emit = defineEmits(['save', 'close', 'switch']);
 
 // 定义插件ID常量，修复pluginId未定义错误
-const PLUGIN_ID = "P115StrmHelper";
+const PLUGIN_ID = "P1115StrmHelper";
 
 // 状态变量
 const loading = ref(true);
