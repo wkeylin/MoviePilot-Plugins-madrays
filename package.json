@@ -143,13 +143,13 @@
     "name": "115网盘STRM助手VUE",
     "description": "115网盘STRM生成一条龙服务",
     "labels": "STRM,115,网盘",
-    "version": "9.9.9",
+    "version": "8.8.8",
     "icon": "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png",
     "author": "DDSRem",
     "level": 1,
     "v2": true,
     "history": {
-      "v9.9.9": "测试"
+      "v8.8.8": "测试"
     }
   }
 
