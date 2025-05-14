@@ -525,7 +525,7 @@ class P1115StrmHelper(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png"
     # 插件版本
-    plugin_version = "9999.9.9"
+    plugin_version = "9999.99.99"
     # 插件作者
     plugin_author = "VUE测试版"
     # 作者主页
@@ -2905,14 +2905,16 @@ class P1115StrmHelper(_PluginBase):
             if self._scheduler:
                 self._scheduler.remove_all_jobs()
                 if self._scheduler.running:
-                    self._event.set()
+                    self._event.set() # This seems to be for APScheduler, keep it
                     self._scheduler.shutdown()
                     self._event.clear()
                 self._scheduler = None
             if self.monitor_stop_event: # General monitor stop
                 self.monitor_stop_event.set()
-            if hasattr(self, '_qr_polling_stop_event') and self._qr_polling_stop_event: # QR polling stop
-                self._qr_polling_stop_event.set()
+            # We will NOT set _qr_polling_stop_event here anymore.
+            # Let polling threads manage their lifecycle or be stopped by a more global shutdown event if available.
+            # if hasattr(self, '_qr_polling_stop_event') and self._qr_polling_stop_event: # QR polling stop
+            #     self._qr_polling_stop_event.set() # REMOVED THIS LINE
         except Exception as e:
             print(str(e))
 
@@ -3142,14 +3144,20 @@ class P1115StrmHelper(_PluginBase):
                     return 
                 elif status_result.get("code") == 0 and status_result.get("status") in ["waiting", "scanned"]:
                     logger.debug(f"[PollingTask UID: {qr_uid}] 状态: {status_result.get('msg')}. 继续轮询。")
-                elif status_result.get("code") == -1 : 
-                    logger.info(f"[PollingTask UID: {qr_uid}] 轮询结束，二维码状态为明确的非成功: {status_result.get('error', '未知错误')}")
-                    return
+                elif status_result.get("code") == -1: 
+                    error_message = status_result.get('error', status_result.get('message', '未知错误')).lower()
+                    # 只有明确的二维码最终状态才退出轮询
+                    if "过期" in error_message or "取消" in error_message or "invalid qr code" in error_message: # 添加了 "invalid qr code" 以覆盖更多明确的115错误
+                        logger.info(f"[PollingTask UID: {qr_uid}] 轮询结束，二维码状态为明确的终止状态: {status_result.get('error', '未知错误')}")
+                        return
+                    else:
+                        # 对于其他错误 (如网络连接、DNS解析、超时等)，记录并继续轮询
+                        logger.warning(f"[PollingTask UID: {qr_uid}] 检查状态时遇到可恢复错误或非终止性错误: {status_result.get('error', '未知错误')}. 将继续轮询。")
                 else: 
                      logger.warning(f"[PollingTask UID: {qr_uid}] 检查状态时收到非终止性意外响应: {status_result}. 继续轮询。")
-            except Exception as e:
-                logger.error(f"[PollingTask UID: {qr_uid}] 轮询检查时发生严重错误: {e}", exc_info=True)
-                # Depending on the error, might want to stop polling. For now, continue.
+            except Exception as e: # Catching broader exceptions from the call itself, though _check_qrcode_api_internal should catch its own.
+                logger.error(f"[PollingTask UID: {qr_uid}] 轮询检查的 _check_qrcode_api_internal 调用本身发生严重错误: {e}", exc_info=True)
+                # 在这种情况下，也继续轮询，除非错误非常严重表明无法恢复
             
             # Wait before next attempt, but be responsive to stop event
             # Check stop event more frequently than polling_interval if polling_interval is large

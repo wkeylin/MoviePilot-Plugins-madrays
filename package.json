@@ -143,13 +143,13 @@
     "name": "VUE-115网盘STRM助手",
     "description": "测试版仅供测试",
     "labels": "STRM,115,网盘",
-    "version": "9999.9.9",
+    "version": "9999.99.99",
     "icon": "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png",
     "author": "VUE测试版",
     "level": 1,
     "v2": true,
     "history": {
-      "v9999.9.9": "测试"
+      "v9999.99.99": "优化cookie回调性能"
     }
   }
 
