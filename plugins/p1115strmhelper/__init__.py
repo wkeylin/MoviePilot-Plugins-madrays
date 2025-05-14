@@ -29,10 +29,11 @@ from p115client.tool.iterdir import (
 from p115client.tool.life import iter_life_behavior_list, life_show
 from p115client.tool.util import share_extract_payload
 from p115rsacipher import encrypt, decrypt
+from p115client.exception import DataError # <-- 新增导入
 
 from app import schemas
 from app.schemas import TransferInfo, FileItem, RefreshMediaItem, ServiceInfo
-from app.schemas.types import EventType, MediaType
+from app.schemas.types import EventType, MediaType, MessageChannel, NotificationType
 from app.core.config import settings
 from app.core.event import eventmanager, Event
 from app.core.context import MediaInfo
@@ -524,7 +525,7 @@ class P1115StrmHelper(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png"
     # 插件版本
-    plugin_version = "99.99.99"
+    plugin_version = "999.99.99"
     # 插件作者
     plugin_author = "VUE测试版"
     # 作者主页
@@ -587,6 +588,11 @@ class P1115StrmHelper(_PluginBase):
     _cron_clear = None
     _pan_transfer_enabled = False
     _pan_transfer_paths = None
+    _cookie_error_notify_enabled: bool = False
+    _cookie_error_notify_client_type: str = "alipaymini"
+    _picgo_enabled: bool = False
+    _picgo_api_key: str = ""
+    _picgo_upload_url: str = "https://www.picgo.net/api/1/upload"
     # 退出事件
     _event = ThreadEvent()
     monitor_stop_event = None
@@ -671,6 +677,11 @@ class P1115StrmHelper(_PluginBase):
             self._cron_clear = config.get("cron_clear")
             self._pan_transfer_enabled = config.get("pan_transfer_enabled")
             self._pan_transfer_paths = config.get("pan_transfer_paths")
+            self._cookie_error_notify_enabled = config.get("cookie_error_notify_enabled", False)
+            self._cookie_error_notify_client_type = config.get("cookie_error_notify_client_type", "alipaymini")
+            self._picgo_enabled = config.get("picgo_enabled", False)
+            self._picgo_api_key = config.get("picgo_api_key", "")
+            self._picgo_upload_url = config.get("picgo_upload_url", "https://www.picgo.net/api/1/upload")
             if not self._user_rmt_mediaext:
                 self._user_rmt_mediaext = "mp4,mkv,ts,iso,rmvb,avi,mov,mpeg,mpg,wmv,3gp,asf,m4v,flv,m2ts,tp,f4v"
             if not self._user_download_mediaext:
@@ -689,10 +700,24 @@ class P1115StrmHelper(_PluginBase):
             self.__update_config()
             return False
 
-        try:
-            self._client = P115Client(self._cookies)
-        except Exception as e:
-            logger.error(f"115网盘客户端创建失败: {e}")
+        # 初始化客户端
+        self._client = None  # 确保 _client 默认为 None
+        if self._cookies:
+            try:
+                # 尝试使用已配置的Cookies创建客户端
+                self._client = P115Client(self._cookies)
+                logger.info("已尝试使用配置中的Cookies初始化115客户端。")
+            except Exception as e:
+                logger.error(f"使用配置中的Cookies创建115客户端失败: {e}。")
+                self._client = None # 创建失败时确保 _client 为 None
+                # Call the handler if enabled and config is loaded enough
+                if hasattr(self, '_cookie_error_notify_enabled') and self._cookie_error_notify_enabled:
+                    logger.info("客户端初始化失败，触发Cookie失效检查和通知流程（来自init_plugin）。")
+                    self._check_cookie_and_notify_if_invalid(context_message="插件启动时115客户端初始化")
+                else:
+                    logger.info("Cookie失效通知未启用或配置未完全加载，跳过初始化时的通知。")
+        else:
+            logger.info("未找到115 Cookies配置，客户端未初始化。请通过插件配置页面登录以获取Cookies。")
 
         # 停止现有任务
         self.stop_service()
@@ -836,6 +861,122 @@ class P1115StrmHelper(_PluginBase):
         """
         return "vue", "dist/assets"
 
+    def _get_user_storage_status(self) -> Dict[str, Any]:
+        """
+        获取115用户基本信息和空间使用情况。
+        """
+        if not self._cookies:
+            return {
+                "success": False,
+                "error_message": "115 Cookies 未配置，无法获取信息。",
+                "user_info": None,
+                "storage_info": None
+            }
+
+        try:
+            # 确保 P115Client 已初始化
+            if not self._client:
+                try:
+                    temp_client = P115Client(self._cookies)
+                    logger.info("【用户存储状态】临时 P115Client 初始化成功")
+                except Exception as client_init_exc:
+                    logger.error(f"【用户存储状态】临时 P115Client 初始化失败: {client_init_exc}")
+                    return {
+                        "success": False,
+                        "error_message": f"115客户端初始化失败: {client_init_exc}",
+                        "user_info": None,
+                        "storage_info": None
+                    }
+            else:
+                temp_client = self._client
+            
+            # 1. 获取用户信息
+            user_info_resp = temp_client.user_my_info() 
+            
+            user_details = None
+            if user_info_resp and user_info_resp.get("state"):
+                data = user_info_resp.get("data", {})
+                vip_data = data.get("vip", {})
+                face_data = data.get("face", {})
+                user_details = {
+                    "name": data.get("uname"),
+                    "is_vip": vip_data.get("is_vip"),
+                    "is_forever_vip": vip_data.get("is_forever"),
+                    "vip_expire_date": vip_data.get("expire_str") if not vip_data.get("is_forever") else "永久",
+                    "avatar": face_data.get("face_s")
+                }
+                logger.info(f"【用户存储状态】获取用户信息成功: {user_details.get('name')}")
+            else:
+                error_msg = user_info_resp.get("message", "获取用户信息失败") if user_info_resp else "获取用户信息响应为空"
+                logger.error(f"【用户存储状态】获取用户信息失败: {error_msg}")
+                return {
+                    "success": False,
+                    "error_message": f"获取115用户信息失败: {error_msg}",
+                    "user_info": None,
+                    "storage_info": None
+                }
+
+            # 2. 获取空间信息
+            space_info_resp = temp_client.fs_index_info(payload=0) 
+            
+            storage_details = None
+            if space_info_resp and space_info_resp.get("state"):
+                data = space_info_resp.get("data", {}).get("space_info", {})
+                storage_details = {
+                    "total": data.get("all_total", {}).get("size_format"),
+                    "used": data.get("all_use", {}).get("size_format"),
+                    "remaining": data.get("all_remain", {}).get("size_format")
+                }
+                logger.info(f"【用户存储状态】获取空间信息成功: 总-{storage_details.get('total')}")
+            else:
+                error_msg = space_info_resp.get("error", "获取空间信息失败") if space_info_resp else "获取空间信息响应为空"
+                logger.error(f"【用户存储状态】获取空间信息失败: {error_msg}")
+                return {
+                    "success": False,
+                    "error_message": f"获取115空间信息失败: {error_msg}",
+                    "user_info": user_details, 
+                    "storage_info": None
+                }
+
+            return {
+                "success": True,
+                "user_info": user_details,
+                "storage_info": storage_details
+            }
+
+        except Exception as e:
+            logger.error(f"【用户存储状态】获取信息时发生意外错误: {e}", exc_info=True)
+            error_str_lower = str(e).lower()
+            specific_error_message = f"处理请求时发生错误: {str(e)}" # 默认错误信息
+
+            # 检查是否为特定的 DataError，表明Cookie失效并返回了HTML
+            definitive_cookie_error_msg_template = "获取115账户信息失败：Cookie无效或已过期，请在插件配置中重新扫码登录。"
+            if (isinstance(e, DataError) and
+                ("errno 61" in error_str_lower or "enodata" in error_str_lower) and
+                "<!doctype html>" in error_str_lower):
+                specific_error_message = definitive_cookie_error_msg_template
+            elif ("cookie" in error_str_lower or
+                  "登录" in error_str_lower or
+                  "登陆" in error_str_lower):
+                 specific_error_message = f"获取115账户信息失败：{str(e)} 请检查Cookie或重新登录。"
+
+            result_to_return = {
+                "success": False,
+                "error_message": specific_error_message,
+                "user_info": None,
+                "storage_info": None
+            }
+
+            # 如果是明确的Cookie失效，并且通知已启用，则主动触发通知流程
+            if self._cookie_error_notify_enabled and specific_error_message == definitive_cookie_error_msg_template:
+                logger.info("用户状态接口检测到明确的Cookie失效，将尝试发送通知。")
+                self._check_cookie_and_notify_if_invalid(
+                    context_message="用户状态接口检测到Cookie失效",
+                    status_check_result=result_to_return # 传递已知的失败状态
+                )
+            
+            return result_to_return
+
     def get_api(self) -> List[Dict[str, Any]]:
         """插件API"""
         return [
@@ -901,6 +1042,13 @@ class P1115StrmHelper(_PluginBase):
                 "methods": ["GET", "POST", "HEAD"],
                 "summary": "302跳转",
                 "description": "115网盘302跳转"
+            },
+            {
+                "path": "/user_storage_status", # 新的API路径
+                "endpoint": self._get_user_storage_status, # 对应的处理函数
+                "methods": ["GET"], # HTTP方法
+                "auth": "bear", # 认证类型
+                "summary": "获取115用户基本信息和空间状态" # API描述
             }
         ]
 
@@ -909,41 +1057,46 @@ class P1115StrmHelper(_PluginBase):
         return {
             "enabled": self._enabled,
             "once_full_sync_strm": self._once_full_sync_strm,
-            "cookies": self._cookies,
-            "password": self._password,
-            "moviepilot_address": self.moviepilot_address,
-            "user_rmt_mediaext": self._user_rmt_mediaext,
-            "user_download_mediaext": self._user_download_mediaext,
+            "cookies": self._cookies or "",
+            "password": self._password or "",
+            "moviepilot_address": self.moviepilot_address or "",
+            "user_rmt_mediaext": self._user_rmt_mediaext or "mp4,mkv,ts,iso,rmvb,avi,mov,mpeg,mpg,wmv,3gp,asf,m4v,flv,m2ts,tp,f4v",
+            "user_download_mediaext": self._user_download_mediaext or "srt,ssa,ass",
             "transfer_monitor_enabled": self._transfer_monitor_enabled,
             "transfer_monitor_scrape_metadata_enabled": self._transfer_monitor_scrape_metadata_enabled,
-            "transfer_monitor_paths": self._transfer_monitor_paths,
-            "transfer_mp_mediaserver_paths": self._transfer_mp_mediaserver_paths,
+            "transfer_monitor_paths": self._transfer_monitor_paths or "",
+            "transfer_mp_mediaserver_paths": self._transfer_mp_mediaserver_paths or "",
             "transfer_monitor_media_server_refresh_enabled": self._transfer_monitor_media_server_refresh_enabled,
-            "transfer_monitor_mediaservers": self._transfer_monitor_mediaservers,
+            "transfer_monitor_mediaservers": self._transfer_monitor_mediaservers or [],
             "timing_full_sync_strm": self._timing_full_sync_strm,
             "full_sync_auto_download_mediainfo_enabled": self._full_sync_auto_download_mediainfo_enabled,
-            "cron_full_sync_strm": self._cron_full_sync_strm,
-            "full_sync_strm_paths": self._full_sync_strm_paths,
+            "cron_full_sync_strm": self._cron_full_sync_strm or "0 */7 * * *",
+            "full_sync_strm_paths": self._full_sync_strm_paths or "",
             "monitor_life_enabled": self._monitor_life_enabled,
             "monitor_life_auto_download_mediainfo_enabled": self._monitor_life_auto_download_mediainfo_enabled,
-            "monitor_life_paths": self._monitor_life_paths,
-            "monitor_life_mp_mediaserver_paths": self._monitor_life_mp_mediaserver_paths,
+            "monitor_life_paths": self._monitor_life_paths or "",
+            "monitor_life_mp_mediaserver_paths": self._monitor_life_mp_mediaserver_paths or "",
             "monitor_life_media_server_refresh_enabled": self._monitor_life_media_server_refresh_enabled,
-            "monitor_life_mediaservers": self._monitor_life_mediaservers,
+            "monitor_life_mediaservers": self._monitor_life_mediaservers or [],
             "monitor_life_auto_remove_local_enabled": self._monitor_life_auto_remove_local_enabled,
             "monitor_life_scrape_metadata_enabled": self._monitor_life_scrape_metadata_enabled,
             "share_strm_enabled": self._share_strm_enabled,
             "share_strm_auto_download_mediainfo_enabled": self._share_strm_auto_download_mediainfo_enabled,
-            "user_share_code": self._user_share_code,
-            "user_receive_code": self._user_receive_code,
-            "user_share_link": self._user_share_link,
-            "user_share_pan_path": self._user_share_pan_path,
-            "user_share_local_path": self._user_share_local_path,
+            "user_share_code": self._user_share_code or "",
+            "user_receive_code": self._user_receive_code or "",
+            "user_share_link": self._user_share_link or "",
+            "user_share_pan_path": self._user_share_pan_path or "/",
+            "user_share_local_path": self._user_share_local_path or "",
             "clear_recyclebin_enabled": self._clear_recyclebin_enabled,
             "clear_receive_path_enabled": self._clear_receive_path_enabled,
-            "cron_clear": self._cron_clear,
+            "cron_clear": self._cron_clear or "0 */7 * * *",
             "pan_transfer_enabled": self._pan_transfer_enabled,
-            "pan_transfer_paths": self._pan_transfer_paths,
+            "pan_transfer_paths": self._pan_transfer_paths or "",
+            "cookie_error_notify_enabled": self._cookie_error_notify_enabled,
+            "cookie_error_notify_client_type": self._cookie_error_notify_client_type,
+            "picgo_enabled": self._picgo_enabled,
+            "picgo_api_key": self._picgo_api_key or "",
+            "picgo_upload_url": self._picgo_upload_url or "https://www.picgo.net/api/1/upload",
             # 获取可用的媒体服务器配置
             "mediaservers": [
                                         {"title": config.name, "value": config.name}
@@ -993,6 +1146,11 @@ class P1115StrmHelper(_PluginBase):
             self._cron_clear = data.get("cron_clear", "0 */7 * * *")
             self._pan_transfer_enabled = data.get("pan_transfer_enabled", False)
             self._pan_transfer_paths = data.get("pan_transfer_paths", "")
+            self._cookie_error_notify_enabled = data.get("cookie_error_notify_enabled", False)
+            self._cookie_error_notify_client_type = data.get("cookie_error_notify_client_type", "alipaymini")
+            self._picgo_enabled = data.get("picgo_enabled", False)
+            self._picgo_api_key = data.get("picgo_api_key", "")
+            self._picgo_upload_url = data.get("picgo_upload_url", "https://www.picgo.net/api/1/upload")
             
             # 持久化存储配置
             self.__update_config()
@@ -1144,11 +1302,13 @@ class P1115StrmHelper(_PluginBase):
                         "items": sorted(items, key=lambda x: x["name"])
                     }
                 except Exception as e:
+                    logger.error(f"【P1115StrmHelper】浏览网盘目录 API 原始错误: {str(e)}")
+                    self._check_cookie_and_notify_if_invalid(context_message=f"浏览网盘目录 '{path}'")
                     return {"code": 1, "msg": f"浏览网盘目录失败: {str(e)}"}
         except Exception as e:
             return {"code": 1, "msg": f"浏览目录失败: {str(e)}"}
 
-    def _get_qrcode_api(self, request: Request = None) -> dict:
+    def _get_qrcode_api(self, request: Request = None, client_type_override: Optional[str] = None) -> dict:
         """获取登录二维码"""
         try:
             import time
@@ -1156,24 +1316,27 @@ class P1115StrmHelper(_PluginBase):
             import requests
             import json
             from app.log import logger # 确保 logger 已导入或可访问
+            import base64
 
-            # 从请求中获取客户端类型，默认为支付宝小程序
-            client_type = request.query_params.get("client_type", "alipaymini") if request else "alipaymini"
+            # 优先使用 override，其次尝试从 request 获取，最后使用默认值
+            final_client_type = client_type_override
+            if not final_client_type:
+                final_client_type = request.query_params.get("client_type", "alipaymini") if request else "alipaymini"
             
-            self.debug_log(f"获取二维码 - 接收到的客户端类型参数: {client_type}")
+            self.debug_log(f"获取二维码 - 接收到的客户端类型参数(request): {request.query_params.get('client_type') if request else 'N/A'}, override: {client_type_override}, 最终使用: {final_client_type}")
             
             # 二维码支持的客户端类型验证 (使用官方或兼容值)
             allowed_types = ["web", "android", "115android", "ios", "115ios", "alipaymini", "wechatmini", "115ipad", "tv", "qandroid"]
-            if client_type not in allowed_types:
-                original_requested_type = client_type
-                client_type = "alipaymini"  # 默认回退到支付宝小程序
-                self.debug_log(f"客户端类型 {original_requested_type} 无效或不受支持，已回退到 {client_type}")
+            if final_client_type not in allowed_types:
+                original_requested_type = final_client_type
+                final_client_type = "alipaymini"  # 默认回退到支付宝小程序
+                self.debug_log(f"客户端类型 {original_requested_type} 无效或不受支持，已回退到 {final_client_type}")
 
             # 添加日志记录，记录最终决定使用的 client_type
-            logger.info(f"【115STRM助手】二维码API - 实际使用客户端类型: {client_type}")
+            logger.info(f"【115STRM助手】二维码API - 实际使用客户端类型: {final_client_type}")
 
             # 1. 获取二维码token
-            token_url = f"https://qrcodeapi.115.com/api/1.0/{client_type}/1.0/token/"
+            token_url = f"https://qrcodeapi.115.com/api/1.0/{final_client_type}/1.0/token/"
             token_headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
                 "Accept": "application/json, text/plain, */*",
@@ -1186,22 +1349,22 @@ class P1115StrmHelper(_PluginBase):
             if not token_response.ok:
                 error_msg = f"获取二维码token失败: {token_response.status_code} - {token_response.text}"
                 self.debug_log(error_msg)
-                return {"code": -1, "error": error_msg, "message": error_msg} # 保持与前端期望的字段一致性
+                return {"code": -1, "error": error_msg, "message": error_msg, "success": False} # Added success flag
                 
             token_data = token_response.json()
             if not token_data.get("state"):
                 error_msg = f"获取二维码token失败: {token_data.get('error', '未知错误')}"
                 self.debug_log(error_msg)
-                return {"code": -1, "error": error_msg, "message": error_msg}
+                return {"code": -1, "error": error_msg, "message": error_msg, "success": False}
                 
             uid = token_data.get("data", {}).get("uid", "")
             if not uid:
                 error_msg = "获取二维码token失败: 未获取到uid"
                 self.debug_log(error_msg)
-                return {"code": -1, "error": error_msg, "message": error_msg}
+                return {"code": -1, "error": error_msg, "message": error_msg, "success": False}
                 
             # 2. 获取二维码图片
-            qrcode_url = f"https://qrcodeapi.115.com/api/1.0/{client_type}/1.0/qrcode?uid={uid}"
+            qrcode_url = f"https://qrcodeapi.115.com/api/1.0/{final_client_type}/1.0/qrcode?uid={uid}"
             qrcode_headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
                 "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
@@ -1214,31 +1377,34 @@ class P1115StrmHelper(_PluginBase):
             if not qrcode_response.ok:
                 error_msg = f"获取二维码图片失败: {qrcode_response.status_code} - {qrcode_response.text}"
                 self.debug_log(error_msg)
-                return {"code": -1, "error": error_msg, "message": error_msg}
+                return {"code": -1, "error": error_msg, "message": error_msg, "success": False}
                 
-            import base64
             qrcode_base64 = base64.b64encode(qrcode_response.content).decode('utf-8')
             
             tips = "请扫描二维码登录"
-            if client_type == "alipaymini":
-                tips = "请使用115客户端扫描二维码登录"
-            elif client_type == "wechatmini":
-                tips = "请使用115客户端扫描二维码登录"
-            elif client_type == "android":
-                tips = "请使用115安卓客户端扫描登录"
-            elif client_type == "ios":
-                tips = "请使用115 iOS客户端扫描登录"
-            elif client_type == "web":
-                tips = "请使用115网页版扫码登录"
+            # Simplified tips logic for brevity, can be expanded as original
+            tips_map = {
+                "alipaymini": "请使用115客户端或支付宝扫描二维码登录",
+                "wechatmini": "请使用115客户端或微信扫描二维码登录",
+                "android": "请使用115安卓客户端扫描登录",
+                "115android": "请使用115安卓客户端扫描登录",
+                "ios": "请使用115 iOS客户端扫描登录",
+                "115ios": "请使用115 iOS客户端扫描登录",
+                "web": "请使用115网页版扫码登录",
+                "115ipad": "请使用115 PAD客户端扫描登录",
+                "tv": "请使用115 TV客户端扫描登录",
+                "qandroid":"请使用115 qandroid客户端扫描登录"
+            }
+            tips = tips_map.get(final_client_type, "请扫描二维码登录")
             
-            self.debug_log(f"二维码获取成功，UID: {uid}, 客户端类型: {client_type}")
+            self.debug_log(f"二维码获取成功，UID: {uid}, 客户端类型: {final_client_type}")
             return {
                 "code": 0,
                 "uid": uid,
                 "qrcode": f"data:image/png;base64,{qrcode_base64}",
                 "tips": tips,
-                "client_type": client_type, # 返回实际使用的 client_type
-                "success": True # 兼容可能的 success 判断
+                "client_type": final_client_type, # 返回实际使用的 client_type
+                "success": True 
             }
             
         except Exception as e:
@@ -1561,6 +1727,16 @@ class P1115StrmHelper(_PluginBase):
                 "cron_clear": self._cron_clear,
                 "pan_transfer_enabled": self._pan_transfer_enabled,
                 "pan_transfer_paths": self._pan_transfer_paths,
+                "cookie_error_notify_enabled": self._cookie_error_notify_enabled,
+                "cookie_error_notify_client_type": self._cookie_error_notify_client_type,
+                "picgo_enabled": self._picgo_enabled,
+                "picgo_api_key": self._picgo_api_key or "",
+                "picgo_upload_url": self._picgo_upload_url or "https://www.picgo.net/api/1/upload",
+                # 获取可用的媒体服务器配置
+                "mediaservers": [
+                                        {"title": config.name, "value": config.name}
+                                        for config in self.mediaserver_helper.get_configs().values()
+                ]
             }
         )
 
@@ -2808,3 +2984,185 @@ class P1115StrmHelper(_PluginBase):
             self.monitor_stop_event.set()
         except Exception as e:
             print(str(e))
+
+    def _check_cookie_and_notify_if_invalid(self, context_message: str = "一个依赖Cookie的操作失败", status_check_result: Optional[Dict] = None):
+        """
+        当一个操作可能因Cookie失效而失败时调用此方法。
+        它会检查Cookie的实际状态，并在配置启用时发送二维码通知。
+        """
+        if not self._cookie_error_notify_enabled:
+            logger.debug("Cookie失效通知未启用，跳过检查和通知流程。")
+            return
+
+        logger.info(f"由于操作 '{context_message}' 疑似失败，准备检查115 Cookie的有效性...")
+        # 日志点A: 确认PicGo配置在方法开始时的状态
+        logger.debug(f"[LogPointA] 检查通知的PicGo配置: _picgo_enabled={self._picgo_enabled}, _picgo_api_key non-empty={bool(self._picgo_api_key)}, _picgo_upload_url='{self._picgo_upload_url}'")
+        
+        current_status_check = status_check_result
+        if current_status_check is None:
+            logger.debug("_check_cookie_and_notify_if_invalid: 未提供status_check_result，将主动调用 _get_user_storage_status 进行检查。")
+            current_status_check = self._get_user_storage_status()
+        else:
+            logger.debug("_check_cookie_and_notify_if_invalid: 使用了提供的status_check_result。")
+
+        if not current_status_check.get("success"):
+            error_message_lower = current_status_check.get("error_message", "").lower()
+            cookie_error_keywords = [
+                "cookie", "登录", "登陆", "认证失败", "未授权", "授权失败", "token", "session",
+                "115客户端初始化失败", "获取115用户信息失败", "获取115空间信息失败", "115 cookies 未配置",
+                "errno 61", "<!doctype html>"
+            ]
+            is_likely_cookie_error = any(keyword in error_message_lower for keyword in cookie_error_keywords)
+
+            if is_likely_cookie_error:
+                logger.warning(f"115 Cookie有效性检查失败: {current_status_check.get('error_message')}. 将尝试发送二维码通知。")
+                
+                client_type_for_qr = self._cookie_error_notify_client_type or "alipaymini"
+                qr_code_data = self._get_qrcode_api(client_type_override=client_type_for_qr)
+
+                if qr_code_data and qr_code_data.get("success") and qr_code_data.get("code") == 0:
+                    base64_image_data_with_prefix = qr_code_data.get("qrcode")
+                    qr_uid = qr_code_data.get("uid", str(int(time.time())))
+                    picgo_image_url = None
+
+                    # 日志点B: 在条件判断之前打印所有相关变量的值
+                    logger.debug(f"[LogPointB] PicGo上传条件检查: "
+                                 f"_picgo_enabled={self._picgo_enabled}, "
+                                 f"_picgo_api_key_present={bool(self._picgo_api_key)}, "
+                                 f"base64_image_present={bool(base64_image_data_with_prefix)}")
+
+                    if self._picgo_enabled and self._picgo_api_key and base64_image_data_with_prefix:
+                        # 日志点C: 如果进入了if语句块
+                        logger.info("[LogPointC] 【Cookie失效通知】PicGo图床上传条件满足，尝试上传。")
+                        picgo_filename = f"115_login_qr_{qr_uid}.png"
+                        picgo_image_url = self._upload_to_picgo(base64_image_data_with_prefix, picgo_filename)
+                        if not picgo_image_url:
+                            logger.error("【Cookie失效通知】二维码上传到PicGo失败。")
+                        else:
+                            logger.info(f"【Cookie失效通知】二维码成功上传到PicGo: {picgo_image_url}")
+                    else:
+                        # 日志点D: 如果未进入if语句块
+                        logger.info(f"[LogPointD] 【Cookie失效通知】PicGo图床上传条件未满足或跳过上传。 "
+                                    f"Reason: _picgo_enabled={self._picgo_enabled}, "
+                                    f"_picgo_api_key_present={bool(self._picgo_api_key)}, "
+                                    f"base64_image_present={bool(base64_image_data_with_prefix)}")
+                    
+                    title = "🚨 115网盘 Cookie 可能已失效 🚨"
+                    text_content_lines = []
+                    static_notification_image_url = "https://img.picgo.net/2025/05/14/BG978adecb9a62a3ed.png"
+                    link_to_send = None # Initialize
+
+                    text_content_lines.append(f"系统检测到您的115网盘Cookie可能已失效（相关操作: {context_message}）。")
+
+                    if picgo_image_url: # QR code successfully uploaded to PicGo
+                        text_content_lines.append(f"🔗 请点击此通知即可展示二维码，")
+                        text_content_lines.append(f"📷 打开并扫描其中的二维码，使用【{qr_code_data.get('client_type', client_type_for_qr).upper()}】方式重新登录。")
+                        link_to_send = picgo_image_url # This link goes to the actual QR code image
+                    else:
+                        if self._picgo_enabled:
+                             text_content_lines.append(f"⚠️ 登录二维码上传图床失败。")
+                        else:
+                             text_content_lines.append(f"⚙️ 图床服务未启用或配置。")
+                        text_content_lines.append(f"   请前往插件配置页面手动扫码登录以恢复服务。")
+                        
+                    text_content_lines.append("💡 扫码提示: 请使用115客户端扫描二维码登录") # New fixed tip
+                    final_text_content = "\n".join(text_content_lines)
+                    
+                    # 日志点E: 确认最终要发送的图片和链接
+                    logger.info(f"[LogPointE] 发送Cookie失效通知。Static image for display: {static_notification_image_url}. Link (action URL, to QR on PicGo if available): {link_to_send if link_to_send else 'N/A (will use default plugin link)'}")
+
+                    try:
+                        post_params = {
+                            "mtype": NotificationType.Plugin,
+                            "title": title,
+                            "text": final_text_content,
+                            "image": static_notification_image_url # Always use the static image for display
+                        }
+                        
+                        if link_to_send: # If QR code link is available, use it
+                            post_params["link"] = link_to_send
+                        # If link_to_send is None, post_message will use its default link (to plugin config page)
+                        
+                        logger.debug(f"[LogPointF] 准备发送通知，参数: {post_params}")
+                        self.post_message(**post_params)
+                        logger.info("Cookie失效二维码通知已发送。")
+                    except Exception as post_e:
+                        logger.error(f"发送Cookie失效通知时发生错误: {post_e}", exc_info=True)
+                else:
+                    qr_error_msg = qr_code_data.get("error", qr_code_data.get("message", "生成二维码失败")) if qr_code_data else "获取二维码数据失败"
+                    logger.error(f"为Cookie失效通知生成二维码失败: {qr_error_msg}")
+                    try:
+                        self.post_message(
+                            mtype=NotificationType.Plugin,
+                            title="115 Cookie 失效 - 获取新登录二维码失败",
+                            text=(
+                                f"⚠️ 系统检测到您的115 Cookie可能已失效（相关操作: {context_message}）。\n"
+                                f"💡 尝试生成新的登录二维码时遇到错误：{qr_error_msg}。\n"
+                                f"📷 请稍后到插件配置页面手动扫码登录。"
+                            )
+                        )
+                    except Exception as post_e:
+                        logger.error(f"发送二维码生成失败通知时发生错误: {post_e}", exc_info=True)
+            else:
+                logger.info(f"操作 '{context_message}' 失败，但Cookie状态检查通过 (信息: {current_status_check.get('error_message')})。可能不是Cookie问题。")
+        else:
+            logger.info(f"操作 '{context_message}' 失败，但后续的115账号状态检查正常。推测非Cookie问题或Cookie已恢复。")
+
+
+    def _upload_to_picgo(self, base64_image_with_prefix: str, filename: str) -> Optional[str]:
+        """
+        Uploads an image to PicGo.net.
+        :param base64_image_with_prefix: Base64 encoded image string with prefix (e.g., "data:image/png;base64,...").
+        :param filename: Desired filename for the uploaded image.
+        :return: The URL of the uploaded image if successful, None otherwise.
+        """
+        if not self._picgo_enabled or not self._picgo_api_key or not self._picgo_upload_url:
+            logger.error("【PicGo上传】服务未启用或API Key/上传URL未配置。")
+            return None
+
+        try:
+            # Strip the prefix "data:image/...;base64,"
+            actual_base64_data = base64_image_with_prefix.split(',', 1)[-1]
+        except IndexError:
+            logger.error(f"【PicGo上传】无效的base64图像数据格式: {base64_image_with_prefix[:50]}...")
+            return None
+
+        headers = {
+            "X-API-Key": self._picgo_api_key,
+            "Accept": "application/json" # Request JSON response
+        }
+        payload = {
+            "source": actual_base64_data,
+            "format": "json", # Request JSON response
+            # title can be sent if desired, API auto-detects from metadata or filename
+            # 'title': filename 
+            "expiration": "P3D"
+        }
+        
+        logger.info(f"【PicGo上传】准备上传图片 {filename} 到 {self._picgo_upload_url}")
+        try:
+            response = requests.post(self._picgo_upload_url, headers=headers, data=payload, timeout=30)
+            response.raise_for_status()  # Raises an exception for 4XX/5XX errors
+
+            response_json = response.json()
+            logger.debug(f"【PicGo上传】响应: {response_json}")
+
+            if response_json.get("success") and response_json.get("status_code") == 200:
+                image_url = response_json.get("image", {}).get("url")
+                if image_url:
+                    logger.info(f"【PicGo上传】图片 {filename} 上传成功。URL: {image_url}")
+                    return image_url
+                else:
+                    logger.error(f"【PicGo上传】上传成功但未在响应中找到图片URL: {response_json}")
+                    return None
+            else:
+                error_message = response_json.get("status_txt", "未知错误")
+                logger.error(f"【PicGo上传】上传失败: {error_message} (Code: {response_json.get('status_code')})")
+                return None
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"【PicGo上传】请求时发生错误: {e}", exc_info=True)
+            return None
+        except Exception as e:
+            logger.error(f"【PicGo上传】处理时发生未知错误: {e}", exc_info=True)
+            return None
