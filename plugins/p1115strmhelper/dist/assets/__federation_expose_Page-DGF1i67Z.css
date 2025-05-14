@@ -1,9 +1,9 @@
 
-.config-card[data-v-6de43ad3] {
+.config-card[data-v-8a5429d2] {
   box-shadow: none !important;
   transition: all 0.2s ease;
 }
-.config-card[data-v-6de43ad3]:hover {
+.config-card[data-v-8a5429d2]:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05) !important;
 }
@@ -11,15 +11,15 @@
 /* 统一字体 */
 
 /* 文字大小 */
-[data-v-6de43ad3] .text-caption {
+[data-v-8a5429d2] .text-caption {
   font-size: 0.8rem !important;
 }
-[data-v-6de43ad3] .text-body-2 {
+[data-v-8a5429d2] .text-body-2 {
   font-size: 0.85rem !important;
 }
 
 /* 美化卡片标题 */
-.bg-primary-gradient[data-v-6de43ad3] {
+.bg-primary-gradient[data-v-8a5429d2] {
   background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.1), rgba(var(--v-theme-primary), 0.05)) !important;
 }
 

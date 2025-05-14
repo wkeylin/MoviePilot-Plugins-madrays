@@ -167,7 +167,9 @@ const clientTypes = [
   { label: "微信", value: "wechatmini" },
   { label: "安卓", value: "115android" },
   { label: "iOS", value: "115ios" },
-  { label: "网页", value: "web" }
+  { label: "网页", value: "web" },
+  { label: "PAD", value: "115ipad" },
+  { label: "TV", value: "tv" }
 ];
 
 // 监视config中的路径配置，同步到可视化组件
@@ -542,7 +544,8 @@ const loadDirContent = async () => {
               name: item.name,
               path: item.path,
               is_dir: true
-            }));
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
         } else {
           throw new Error('浏览目录失败：无效响应');
         }
@@ -565,7 +568,9 @@ const loadDirContent = async () => {
       const result = await props.api.get(`plugin/${PLUGIN_ID}/browse_dir?path=${encodeURIComponent(dirDialog.currentPath)}&is_local=${dirDialog.isLocal}`);
       
       if (result && result.code === 0 && result.items) {
-        dirDialog.items = result.items.filter(item => item.is_dir); // 只保留目录
+        dirDialog.items = result.items
+          .filter(item => item.is_dir) // 只保留目录
+          .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
         dirDialog.currentPath = result.path || dirDialog.currentPath;
       } else {
         throw new Error(result?.msg || '获取网盘目录内容失败');
@@ -972,7 +977,7 @@ return (_ctx, _cache) => {
                                     modelValue: config.enabled,
                                     "onUpdate:modelValue": _cache[0] || (_cache[0] = $event => ((config.enabled) = $event)),
                                     label: "启用插件",
-                                    color: "primary",
+                                    color: "success",
                                     density: "compact"
                                   }, null, 8, ["modelValue"])
                                 ]),
@@ -1199,7 +1204,7 @@ return (_ctx, _cache) => {
                                             modelValue: config.transfer_monitor_enabled,
                                             "onUpdate:modelValue": _cache[6] || (_cache[6] = $event => ((config.transfer_monitor_enabled) = $event)),
                                             label: "整理事件监控",
-                                            color: "primary"
+                                            color: "info"
                                           }, null, 8, ["modelValue"])
                                         ]),
                                         _: 1
@@ -1227,7 +1232,7 @@ return (_ctx, _cache) => {
                                             modelValue: config.transfer_monitor_media_server_refresh_enabled,
                                             "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => ((config.transfer_monitor_media_server_refresh_enabled) = $event)),
                                             label: "媒体服务器刷新",
-                                            color: "primary"
+                                            color: "warning"
                                           }, null, 8, ["modelValue"])
                                         ]),
                                         _: 1
@@ -1443,7 +1448,7 @@ return (_ctx, _cache) => {
                                             modelValue: config.timing_full_sync_strm,
                                             "onUpdate:modelValue": _cache[12] || (_cache[12] = $event => ((config.timing_full_sync_strm) = $event)),
                                             label: "定期全量同步",
-                                            color: "primary"
+                                            color: "info"
                                           }, null, 8, ["modelValue"])
                                         ]),
                                         _: 1
@@ -1472,7 +1477,7 @@ return (_ctx, _cache) => {
                                             modelValue: config.full_sync_auto_download_mediainfo_enabled,
                                             "onUpdate:modelValue": _cache[14] || (_cache[14] = $event => ((config.full_sync_auto_download_mediainfo_enabled) = $event)),
                                             label: "下载媒体数据文件",
-                                            color: "primary"
+                                            color: "warning"
                                           }, null, 8, ["modelValue"])
                                         ]),
                                         _: 1
@@ -1588,7 +1593,7 @@ return (_ctx, _cache) => {
                                             modelValue: config.monitor_life_enabled,
                                             "onUpdate:modelValue": _cache[16] || (_cache[16] = $event => ((config.monitor_life_enabled) = $event)),
                                             label: "监控115生活事件",
-                                            color: "primary"
+                                            color: "info"
                                           }, null, 8, ["modelValue"])
                                         ]),
                                         _: 1
@@ -1602,7 +1607,7 @@ return (_ctx, _cache) => {
                                             modelValue: config.monitor_life_auto_download_mediainfo_enabled,
                                             "onUpdate:modelValue": _cache[17] || (_cache[17] = $event => ((config.monitor_life_auto_download_mediainfo_enabled) = $event)),
                                             label: "下载媒体数据文件",
-                                            color: "primary"
+                                            color: "warning"
                                           }, null, 8, ["modelValue"])
                                         ]),
                                         _: 1
@@ -1630,7 +1635,7 @@ return (_ctx, _cache) => {
                                             modelValue: config.monitor_life_auto_remove_local_enabled,
                                             "onUpdate:modelValue": _cache[19] || (_cache[19] = $event => ((config.monitor_life_auto_remove_local_enabled) = $event)),
                                             label: "网盘删除本地同步删除",
-                                            color: "primary"
+                                            color: "error"
                                           }, null, 8, ["modelValue"])
                                         ]),
                                         _: 1
@@ -1649,7 +1654,7 @@ return (_ctx, _cache) => {
                                             modelValue: config.monitor_life_media_server_refresh_enabled,
                                             "onUpdate:modelValue": _cache[20] || (_cache[20] = $event => ((config.monitor_life_media_server_refresh_enabled) = $event)),
                                             label: "媒体服务器刷新",
-                                            color: "primary"
+                                            color: "warning"
                                           }, null, 8, ["modelValue"])
                                         ]),
                                         _: 1
@@ -1876,7 +1881,7 @@ return (_ctx, _cache) => {
                                             modelValue: config.clear_recyclebin_enabled,
                                             "onUpdate:modelValue": _cache[24] || (_cache[24] = $event => ((config.clear_recyclebin_enabled) = $event)),
                                             label: "清空回收站",
-                                            color: "primary"
+                                            color: "error"
                                           }, null, 8, ["modelValue"])
                                         ]),
                                         _: 1
@@ -1890,7 +1895,7 @@ return (_ctx, _cache) => {
                                             modelValue: config.clear_receive_path_enabled,
                                             "onUpdate:modelValue": _cache[25] || (_cache[25] = $event => ((config.clear_receive_path_enabled) = $event)),
                                             label: "清空我的接收目录",
-                                            color: "primary"
+                                            color: "error"
                                           }, null, 8, ["modelValue"])
                                         ]),
                                         _: 1
@@ -1950,7 +1955,7 @@ return (_ctx, _cache) => {
                                             modelValue: config.pan_transfer_enabled,
                                             "onUpdate:modelValue": _cache[28] || (_cache[28] = $event => ((config.pan_transfer_enabled) = $event)),
                                             label: "网盘整理",
-                                            color: "primary"
+                                            color: "info"
                                           }, null, 8, ["modelValue"])
                                         ]),
                                         _: 1
@@ -2469,6 +2474,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-0a20dc2e"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-c24878af"]]);
 
 export { Config as default };

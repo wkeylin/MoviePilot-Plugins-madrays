@@ -139,17 +139,17 @@
       "v1.0": "首次发布"
     }
   },
-  "p1115strmhelper": {
+  "P1115StrmHelper": {
     "name": "VUE-115网盘STRM助手",
-    "description": "115网盘STRM生成一条龙服务",
+    "description": "测试版仅供测试",
     "labels": "STRM,115,网盘",
-    "version": "99.9.9",
+    "version": "99.99.99",
     "icon": "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png",
     "author": "VUE测试版",
     "level": 1,
     "v2": true,
     "history": {
-      "v99.9.9": "测试"
+      "v99.99.99": "测试"
     }
   }
 

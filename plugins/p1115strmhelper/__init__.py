@@ -520,11 +520,11 @@ class P1115StrmHelper(_PluginBase):
     # 插件名称
     plugin_name = "VUE-115网盘STRM助手"
     # 插件描述
-    plugin_desc = "115网盘STRM生成一条龙服务"
+    plugin_desc = "测试版仅供测试"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png"
     # 插件版本
-    plugin_version = "99.9.9"
+    plugin_version = "99.99.99"
     # 插件作者
     plugin_author = "VUE测试版"
     # 作者主页
@@ -592,9 +592,6 @@ class P1115StrmHelper(_PluginBase):
     monitor_stop_event = None
     monitor_life_thread = None
 
-    # 移除暂存登录 account 的字典
-    # _login_accounts: Dict[str, str] = {}
-
     def debug_log(self, message):
         """记录调试日志"""
         logger.debug(f"【P1115StrmHelper】{message}")
@@ -612,9 +609,6 @@ class P1115StrmHelper(_PluginBase):
         self.cache_delete_pan_transfer_list = []
         self.cache_creata_pan_transfer_list = []
         
-        # 移除暂存 account 字典的初始化
-        # self._login_accounts = {}
-
         if config:
             self._enabled = config.get("enabled")
             self._once_full_sync_strm = config.get("once_full_sync_strm")
@@ -688,6 +682,7 @@ class P1115StrmHelper(_PluginBase):
             if not self._user_share_pan_path:
                 self._user_share_pan_path = "/"
             self.__update_config()
+            logger.info(f"【P1115StrmHelper】After config load in init_plugin: self._monitor_life_enabled: {self._monitor_life_enabled}, self._pan_transfer_enabled: {self._pan_transfer_enabled}, self._monitor_life_paths: {self._monitor_life_paths}, self._pan_transfer_paths: {self._pan_transfer_paths}")
 
         if self.__check_python_version() is False:
             self._enabled, self._once_full_sync_strm = False, False
@@ -1290,12 +1285,12 @@ class P1115StrmHelper(_PluginBase):
             data = response.json()
 
             # 直接处理115接口的特定状态码 (90038 = 等待扫描)
-            if data.get("state") == False and data.get("code") == 90038 and data.get("message") == "\u8bf7\u626b\u63cf\u4e8c\u7ef4\u7801":
+            if data.get("state") == False and data.get("code") == 90038 and data.get("message") == "请扫描二维码":
                 self.debug_log("二维码状态：等待扫描 (来自115的code 90038)")
                 return {"code": 0, "status": "waiting", "msg": "等待扫码"}
             
             # 直接处理115接口的特定状态码 (90039 = 等待确认)
-            if data.get("state") == False and data.get("code") == 90039 and data.get("message") == "\u8bf7\u786e\u8ba4\u767b\u5f55":
+            if data.get("state") == False and data.get("code") == 90039 and data.get("message") == "请确认登录":
                 self.debug_log("二维码状态：已扫描，等待确认 (来自115的code 90039)")
                 # 不需要再暂存 account 了
                 return {"code": 0, "status": "scanned", "msg": "已扫码，请在设备上确认"}
@@ -1388,12 +1383,18 @@ class P1115StrmHelper(_PluginBase):
                         standard_app_name = "ios"
                         self.debug_log(f"标准 app 名称映射: {client_type} -> {standard_app_name}")
                     # 可以根据需要添加其他映射，如 115ipad -> ios? qandroid -> android? web, alipaymini, wechatmini 保持不变
-                    elif client_type == "115ipad": # 假设映射到 ios
-                        standard_app_name = "ios" 
+                    elif client_type == "115ipad": 
+                        standard_app_name = "115ipad" # 修正：确保115ipad映射到自身
                         self.debug_log(f"标准 app 名称映射: {client_type} -> {standard_app_name}")
                     elif client_type == "qandroid": # 假设映射到 android
                         standard_app_name = "android"
                         self.debug_log(f"标准 app 名称映射: {client_type} -> {standard_app_name}")
+                    elif client_type == "wechatmini":
+                        standard_app_name = "wechatmini"
+                    elif client_type == "tv":
+                        standard_app_name = "tv"
+                    elif client_type == "harmony":
+                        standard_app_name = "harmony"
 
                     # 关键修改 2: 使用 standard_app_name 构建 URL
                     login_result_url = f"https://passportapi.115.com/app/1.0/{standard_app_name}/1.0/login/qrcode/"
@@ -1707,8 +1708,10 @@ class P1115StrmHelper(_PluginBase):
                 # 通过重命名格式判断根目录文件夹
                 # 计算重命名中的文件夹层数
                 rename_format_level = len(settings.TV_RENAME_FORMAT.split("/")) - 1
-                logger.info(rename_format_level)
+                logger.info(f"【媒体刮削-IF分支-TV】计算出的 rename_format_level: {rename_format_level}")
+                logger.info(f"【媒体刮削-IF分支-TV】原始 strm 文件路径 (path): {path}")
                 if rename_format_level < 1:
+                    logger.info("【媒体刮削-IF分支-TV】rename_format_level < 1，将刮削 strm 文件本身")
                     file_path = Path(path)
                     fileitem = FileItem(
                         storage="local",
@@ -1721,15 +1724,27 @@ class P1115StrmHelper(_PluginBase):
                         modify_time=file_path.stat().st_mtime,
                     )
                 else:
-                    dir_path = Path(Path(path).parents[rename_format_level - 1])
-                    logger.info()
+                    logger.info(f"【媒体刮削-IF分支-TV】rename_format_level >= 1，将刮削父级目录。索引 parents[{rename_format_level - 1}]")
+                    dir_path = Path(path).parents[rename_format_level - 1]
+                    logger.info(f"【媒体刮削-IF分支-TV】计算出的电视剧目录路径 (dir_path): {dir_path}")
+                    try:
+                        stat_result = dir_path.stat()
+                        modify_time = stat_result.st_mtime
+                        logger.info(f"【媒体刮削-IF分支-TV】dir_path.stat() 成功, mtime: {modify_time}")
+                    except Exception as e_stat:
+                        logger.error(f"【媒体刮削-IF分支-TV】dir_path.stat() 失败: {e_stat}", exc_info=True)
+                        # 如果 stat 失败，可能路径有问题，或者是一个不期望刮削的深层结构
+                        # 尝试回退到刮削 .strm 文件本身或其直接父目录，或者直接报错返回
+                        # 这里暂时不改变行为，让其自然失败，以便观察
+                        raise # 重新抛出异常，看看哪里捕获
+
                     fileitem = FileItem(
                         storage="local",
                         type="dir",
                         path=str(dir_path),
                         name=dir_path.name,
                         basename=dir_path.stem,
-                        modify_time=dir_path.stat().st_mtime,
+                        modify_time=modify_time, # 使用之前获取的 modify_time
                     )
             self.mediachain.scrape_metadata(
                 fileitem=fileitem, meta=meta, mediainfo=mediainfo
@@ -2093,14 +2108,18 @@ class P1115StrmHelper(_PluginBase):
             return
 
         if self._transfer_monitor_scrape_metadata_enabled:
-            self.media_scrape_metadata(
-                path=strm_target_path,
-                item_name=item_dest_name,
-                mediainfo=mediainfo,
-                meta=meta,
-            )
-
-        if self._transfer_monitor_media_server_refresh_enabled:
+            try:
+                self.media_scrape_metadata(
+                    path=strm_target_path,
+                    item_name=item_dest_name,
+                    mediainfo=mediainfo, # CORRECTED: Use local variable 'mediainfo'
+                    meta=meta            # CORRECTED: Use local variable 'meta'
+                )
+                logger.info("【监控整理STRM生成】Call to self.media_scrape_metadata completed.")
+            except Exception as e_scrape:
+                logger.error(f"【监控整理STRM生成】ERROR during self.media_scrape_metadata call: {e_scrape}", exc_info=True)
+        # 刷新媒体库
+        if self._transfer_monitor_refresh_mediaserver_enabled:
             if not self.transfer_service_infos:
                 return
 
@@ -2326,6 +2345,7 @@ class P1115StrmHelper(_PluginBase):
 
         注意: 目前没有重命名文件，复制文件的操作事件
         """
+        logger.info(f"【P1115StrmHelper】MONITOR_LIFE_STRM_FILES THREAD STARTED. self._enabled: {self._enabled}, self._monitor_life_enabled: {self._monitor_life_enabled}, self._pan_transfer_enabled: {self._pan_transfer_enabled}, self._monitor_life_paths: {self._monitor_life_paths}, self._pan_transfer_paths: {self._pan_transfer_paths}")
 
         def refresh_mediaserver(file_path: str, file_name: str):
             """
@@ -2520,6 +2540,7 @@ class P1115StrmHelper(_PluginBase):
                 logger.info(
                     "【监控生活事件】生成 STRM 文件成功: %s", str(new_file_path)
                 )
+                logger.info(f"【监控生活事件】检查刮削开关: self._monitor_life_scrape_metadata_enabled = {self._monitor_life_scrape_metadata_enabled}") # 添加日志
                 if self._monitor_life_scrape_metadata_enabled:
                     self.media_scrape_metadata(
                         path=new_file_path,
@@ -2647,11 +2668,13 @@ class P1115StrmHelper(_PluginBase):
                     )
                     return
             # 3.匹配是否为生成STRM文件路径目录
+            logger.info(f"【P1115StrmHelper】In new_creata_path, checking for life event STRM generation. self._monitor_life_enabled: {self._monitor_life_enabled}, self._monitor_life_paths: {bool(self._monitor_life_paths)}")
             if self._monitor_life_enabled and self._monitor_life_paths:
                 if str(event["file_id"]) in self.cache_creata_pan_transfer_list:
-                    # 检查是否命中缓存，命中则不处理
+                    logger.info(f"【P1115StrmHelper】Life event for file_id {event['file_id']} found in cache_creata_pan_transfer_list, skipping direct creata_strm.")
                     self.cache_creata_pan_transfer_list.remove(str(event["file_id"]))
                 else:
+                    logger.info(f"【P1115StrmHelper】Life event for file_id {event['file_id']} (name: {event.get('file_name', 'N/A')}) NOT in cache, attempting to call creata_strm.")
                     creata_strm(event=event, file_path=file_path)
 
         resp = life_show(self._client)
