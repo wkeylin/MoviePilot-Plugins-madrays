@@ -25,28 +25,29 @@ const _hoisted_15 = { class: "d-flex flex-column" };
 const _hoisted_16 = { class: "path-selector flex-grow-1 mr-2" };
 const _hoisted_17 = { class: "path-selector flex-grow-1 ml-2" };
 const _hoisted_18 = { class: "d-flex flex-column" };
-const _hoisted_19 = {
+const _hoisted_19 = { class: "d-flex flex-column" };
+const _hoisted_20 = {
   key: 0,
   class: "d-flex justify-center my-3"
 };
-const _hoisted_20 = { key: 1 };
-const _hoisted_21 = {
+const _hoisted_21 = { key: 1 };
+const _hoisted_22 = {
   key: 1,
   class: "d-flex flex-column align-center py-3"
 };
-const _hoisted_22 = {
+const _hoisted_23 = {
   key: 2,
   class: "d-flex flex-column align-center"
 };
-const _hoisted_23 = { class: "d-flex flex-column align-center mb-3" };
-const _hoisted_24 = ["src"];
-const _hoisted_25 = { class: "text-body-2 text-grey mb-1" };
-const _hoisted_26 = { class: "text-subtitle-2 font-weight-medium text-primary" };
-const _hoisted_27 = {
+const _hoisted_24 = { class: "d-flex flex-column align-center mb-3" };
+const _hoisted_25 = ["src"];
+const _hoisted_26 = { class: "text-body-2 text-grey mb-1" };
+const _hoisted_27 = { class: "text-subtitle-2 font-weight-medium text-primary" };
+const _hoisted_28 = {
   key: 3,
   class: "d-flex flex-column align-center py-3"
 };
-const _hoisted_28 = { class: "text-caption mt-2 text-grey" };
+const _hoisted_29 = { class: "text-caption mt-2 text-grey" };
 
 const {ref,reactive,computed,onMounted,watch} = await importShared('vue');
 
@@ -122,7 +123,20 @@ const config = reactive({
   cookie_error_notify_client_type: 'alipaymini',
   picgo_enabled: false,
   picgo_api_key: '',
-  picgo_upload_url: 'https://www.picgo.net/api/1/upload'
+  picgo_upload_url: 'https://www.picgo.net/api/1/upload',
+  // MediaWarp Config Start
+  mediawarp_enabled: false,
+  mediawarp_port: '18699',
+  mediawarp_media_strm_path: '',
+  mediawarp_mediaservers: [],
+  mediawarp_crx: false,
+  mediawarp_actor_plus: false,
+  mediawarp_fanart_show: false,
+  mediawarp_external_player_url: false,
+  mediawarp_danmaku: false,
+  mediawarp_video_together: false,
+  mediawarp_srt2ass: false,
+  // MediaWarp Config End
 });
 
 // 消息提示
@@ -138,6 +152,7 @@ const fullSyncPaths = ref([{ local: '', remote: '' }]);
 const monitorLifePaths = ref([{ local: '', remote: '' }]);
 const monitorLifeMpPaths = ref([{ local: '', remote: '' }]);
 const panTransferPaths = ref([{ path: '' }]);
+const mediawarpStrmLocalPaths = ref([{ path: '' }]); // 新增：MediaWarp STRM 本地路径
 
 // 目录选择器对话框
 const dirDialog = reactive({
@@ -309,16 +324,34 @@ watch(() => config.pan_transfer_paths, (newVal) => {
   }
 }, { immediate: true });
 
+// 新增：监视 mediawarp_media_strm_path
+watch(() => config.mediawarp_media_strm_path, (newVal) => {
+  if (!newVal) {
+    mediawarpStrmLocalPaths.value = [{ path: '' }];
+    return;
+  }
+  try {
+    const paths = newVal.split('\n').filter(line => line.trim());
+    mediawarpStrmLocalPaths.value = paths.map(path => ({ path }));
+    if (mediawarpStrmLocalPaths.value.length === 0) {
+      mediawarpStrmLocalPaths.value = [{ path: '' }];
+    }
+  } catch (e) {
+    console.error('解析mediawarp_media_strm_path出错:', e);
+    mediawarpStrmLocalPaths.value = [{ path: '' }];
+  }
+}, { immediate: true });
+
 // 从路径对象列表生成配置字符串
 const generatePathsConfig = (paths, key) => {
   const configText = paths.map(p => {
-    if (key === 'panTransfer') {
+    if (key === 'panTransfer' || key === 'mediawarpStrm') { // 修改：加入 mediawarpStrm
       return p.path?.trim();
     } else {
       return `${p.local?.trim()}#${p.remote?.trim()}`;
     }
   }).filter(p => {
-    if (key === 'panTransfer') {
+    if (key === 'panTransfer' || key === 'mediawarpStrm') { // 修改：加入 mediawarpStrm
       return p && p !== '';
     } else {
       return p !== '#' && p !== '';
@@ -341,6 +374,25 @@ const loadConfig = async () => {
       if (data.mediaservers) {
         mediaservers.value = data.mediaservers;
       }
+
+      // Pre-fill mediawarp_media_strm_path if it's empty or not in saved data
+      if (!config.mediawarp_media_strm_path) {
+        const p115LocalPaths = new Set();
+        if (config.transfer_monitor_paths) {
+            config.transfer_monitor_paths.split('\\n')
+                .map(p => p.split('#')[0]?.trim()).filter(p => p).forEach(p => p115LocalPaths.add(p));
+        }
+        if (config.full_sync_strm_paths) {
+            config.full_sync_strm_paths.split('\\n')
+                .map(p => p.split('#')[0]?.trim()).filter(p => p).forEach(p => p115LocalPaths.add(p));
+        }
+        if (config.monitor_life_paths) {
+            config.monitor_life_paths.split('\\n')
+                .map(p => p.split('#')[0]?.trim()).filter(p => p).forEach(p => p115LocalPaths.add(p));
+        }
+        config.mediawarp_media_strm_path = Array.from(p115LocalPaths).join('\\n');
+      }
+
     }
   } catch (err) {
     console.error('加载配置失败:', err);
@@ -365,6 +417,7 @@ const saveConfig = async () => {
     config.monitor_life_paths = generatePathsConfig(monitorLifePaths.value, 'monitorLife');
     config.monitor_life_mp_mediaserver_paths = generatePathsConfig(monitorLifeMpPaths.value, 'monitorLifeMp');
     config.pan_transfer_paths = generatePathsConfig(panTransferPaths.value, 'panTransfer');
+    config.mediawarp_media_strm_path = generatePathsConfig(mediawarpStrmLocalPaths.value, 'mediawarpStrm'); // 新增
 
     // 2. 【重要】通过 emit 事件将配置数据发送给 MoviePilot 框架
     //    使用 JSON.parse(JSON.stringify(...)) 确保传递的是纯对象
@@ -456,6 +509,9 @@ const addPath = (type) => {
     case 'monitorLifeMp':
       monitorLifeMpPaths.value.push({ local: '', remote: '' });
       break;
+    case 'mediawarpStrm': // 新增
+      mediawarpStrmLocalPaths.value.push({ path: '' });
+      break;
   }
 };
 
@@ -489,6 +545,12 @@ const removePath = (index, type) => {
       monitorLifeMpPaths.value.splice(index, 1);
       if (monitorLifeMpPaths.value.length === 0) {
         monitorLifeMpPaths.value = [{ local: '', remote: '' }];
+      }
+      break;
+    case 'mediawarpStrm': // 新增
+      mediawarpStrmLocalPaths.value.splice(index, 1);
+      if (mediawarpStrmLocalPaths.value.length === 0) {
+        mediawarpStrmLocalPaths.value = [{ path: '' }];
       }
       break;
   }
@@ -657,6 +719,9 @@ const confirmDirSelection = () => {
         break;
       case 'panTransfer':
         panTransferPaths.value[dirDialog.index].path = dirDialog.currentPath;
+        break;
+      case 'mediawarpStrm': // 新增
+        mediawarpStrmLocalPaths.value[dirDialog.index].path = dirDialog.currentPath;
         break;
     }
   } else if (dirDialog.type === 'sharePath') {
@@ -927,7 +992,7 @@ return (_ctx, _cache) => {
               color: "primary",
               size: "small"
             }),
-            _cache[40] || (_cache[40] = _createElementVNode("span", null, "115网盘STRM助手配置", -1))
+            _cache[51] || (_cache[51] = _createElementVNode("span", null, "115网盘STRM助手配置", -1))
           ]),
           _: 1
         }),
@@ -970,7 +1035,7 @@ return (_ctx, _cache) => {
                             color: "primary",
                             size: "small"
                           }),
-                          _cache[41] || (_cache[41] = _createElementVNode("span", null, "基础设置", -1))
+                          _cache[52] || (_cache[52] = _createElementVNode("span", null, "基础设置", -1))
                         ]),
                         _: 1
                       }),
@@ -1109,12 +1174,12 @@ return (_ctx, _cache) => {
                                 size: "small",
                                 start: ""
                               }, {
-                                default: _withCtx(() => _cache[42] || (_cache[42] = [
+                                default: _withCtx(() => _cache[53] || (_cache[53] = [
                                   _createTextVNode("mdi-file-move-outline")
                                 ])),
                                 _: 1
                               }),
-                              _cache[43] || (_cache[43] = _createTextVNode("监控MP整理 "))
+                              _cache[54] || (_cache[54] = _createTextVNode("监控MP整理 "))
                             ]),
                             _: 1
                           }),
@@ -1127,12 +1192,12 @@ return (_ctx, _cache) => {
                                 size: "small",
                                 start: ""
                               }, {
-                                default: _withCtx(() => _cache[44] || (_cache[44] = [
+                                default: _withCtx(() => _cache[55] || (_cache[55] = [
                                   _createTextVNode("mdi-sync")
                                 ])),
                                 _: 1
                               }),
-                              _cache[45] || (_cache[45] = _createTextVNode("全量同步 "))
+                              _cache[56] || (_cache[56] = _createTextVNode("全量同步 "))
                             ]),
                             _: 1
                           }),
@@ -1145,12 +1210,12 @@ return (_ctx, _cache) => {
                                 size: "small",
                                 start: ""
                               }, {
-                                default: _withCtx(() => _cache[46] || (_cache[46] = [
+                                default: _withCtx(() => _cache[57] || (_cache[57] = [
                                   _createTextVNode("mdi-calendar-heart")
                                 ])),
                                 _: 1
                               }),
-                              _cache[47] || (_cache[47] = _createTextVNode("监控115生活事件 "))
+                              _cache[58] || (_cache[58] = _createTextVNode("监控115生活事件 "))
                             ]),
                             _: 1
                           }),
@@ -1163,12 +1228,12 @@ return (_ctx, _cache) => {
                                 size: "small",
                                 start: ""
                               }, {
-                                default: _withCtx(() => _cache[48] || (_cache[48] = [
+                                default: _withCtx(() => _cache[59] || (_cache[59] = [
                                   _createTextVNode("mdi-broom")
                                 ])),
                                 _: 1
                               }),
-                              _cache[49] || (_cache[49] = _createTextVNode("定期清理 "))
+                              _cache[60] || (_cache[60] = _createTextVNode("定期清理 "))
                             ]),
                             _: 1
                           }),
@@ -1181,12 +1246,12 @@ return (_ctx, _cache) => {
                                 size: "small",
                                 start: ""
                               }, {
-                                default: _withCtx(() => _cache[50] || (_cache[50] = [
+                                default: _withCtx(() => _cache[61] || (_cache[61] = [
                                   _createTextVNode("mdi-transfer")
                                 ])),
                                 _: 1
                               }),
-                              _cache[51] || (_cache[51] = _createTextVNode("网盘整理 "))
+                              _cache[62] || (_cache[62] = _createTextVNode("网盘整理 "))
                             ]),
                             _: 1
                           }),
@@ -1199,12 +1264,30 @@ return (_ctx, _cache) => {
                                 size: "small",
                                 start: ""
                               }, {
-                                default: _withCtx(() => _cache[52] || (_cache[52] = [
+                                default: _withCtx(() => _cache[63] || (_cache[63] = [
                                   _createTextVNode("mdi-bell-outline")
                                 ])),
                                 _: 1
                               }),
-                              _cache[53] || (_cache[53] = _createTextVNode("通知与图床 "))
+                              _cache[64] || (_cache[64] = _createTextVNode("通知与图床 "))
+                            ]),
+                            _: 1
+                          }),
+                          _createVNode(_component_v_tab, {
+                            value: "tab-mediawarp",
+                            class: "text-caption"
+                          }, {
+                            default: _withCtx(() => [
+                              _createVNode(_component_v_icon, {
+                                size: "small",
+                                start: ""
+                              }, {
+                                default: _withCtx(() => _cache[65] || (_cache[65] = [
+                                  _createTextVNode("mdi-cloud-cog")
+                                ])),
+                                _: 1
+                              }),
+                              _cache[66] || (_cache[66] = _createTextVNode("MediaWarp "))
                             ]),
                             _: 1
                           })
@@ -1214,7 +1297,7 @@ return (_ctx, _cache) => {
                       _createVNode(_component_v_divider),
                       _createVNode(_component_v_window, {
                         modelValue: activeTab.value,
-                        "onUpdate:modelValue": _cache[34] || (_cache[34] = $event => ((activeTab).value = $event))
+                        "onUpdate:modelValue": _cache[45] || (_cache[45] = $event => ((activeTab).value = $event))
                       }, {
                         default: _withCtx(() => [
                           _createVNode(_component_v_window_item, { value: "tab-transfer" }, {
@@ -1306,7 +1389,7 @@ return (_ctx, _cache) => {
                                                   }, null, 8, ["modelValue", "onUpdate:modelValue", "onClick:append"])
                                                 ]),
                                                 _createVNode(_component_v_icon, null, {
-                                                  default: _withCtx(() => _cache[54] || (_cache[54] = [
+                                                  default: _withCtx(() => _cache[67] || (_cache[67] = [
                                                     _createTextVNode("mdi-pound")
                                                   ])),
                                                   _: 1
@@ -1330,7 +1413,7 @@ return (_ctx, _cache) => {
                                                 }, {
                                                   default: _withCtx(() => [
                                                     _createVNode(_component_v_icon, null, {
-                                                      default: _withCtx(() => _cache[55] || (_cache[55] = [
+                                                      default: _withCtx(() => _cache[68] || (_cache[68] = [
                                                         _createTextVNode("mdi-delete")
                                                       ])),
                                                       _: 1
@@ -1347,7 +1430,7 @@ return (_ctx, _cache) => {
                                               class: "mt-2 align-self-start",
                                               onClick: _cache[10] || (_cache[10] = $event => (addPath('transfer')))
                                             }, {
-                                              default: _withCtx(() => _cache[56] || (_cache[56] = [
+                                              default: _withCtx(() => _cache[69] || (_cache[69] = [
                                                 _createTextVNode(" 添加路径 ")
                                               ])),
                                               _: 1
@@ -1359,7 +1442,7 @@ return (_ctx, _cache) => {
                                             density: "compact",
                                             class: "mt-2"
                                           }, {
-                                            default: _withCtx(() => _cache[57] || (_cache[57] = [
+                                            default: _withCtx(() => _cache[70] || (_cache[70] = [
                                               _createTextVNode(" 监控MoviePilot整理入库事件，自动在此处配置的本地目录生成对应的STRM文件。"),
                                               _createElementVNode("br", null, null, -1),
                                               _createTextVNode(" 格式：本地STRM目录#网盘媒体库目录 ")
@@ -1391,7 +1474,7 @@ return (_ctx, _cache) => {
                                                   }, null, 8, ["modelValue", "onUpdate:modelValue"])
                                                 ]),
                                                 _createVNode(_component_v_icon, null, {
-                                                  default: _withCtx(() => _cache[58] || (_cache[58] = [
+                                                  default: _withCtx(() => _cache[71] || (_cache[71] = [
                                                     _createTextVNode("mdi-pound")
                                                   ])),
                                                   _: 1
@@ -1413,7 +1496,7 @@ return (_ctx, _cache) => {
                                                 }, {
                                                   default: _withCtx(() => [
                                                     _createVNode(_component_v_icon, null, {
-                                                      default: _withCtx(() => _cache[59] || (_cache[59] = [
+                                                      default: _withCtx(() => _cache[72] || (_cache[72] = [
                                                         _createTextVNode("mdi-delete")
                                                       ])),
                                                       _: 1
@@ -1430,7 +1513,7 @@ return (_ctx, _cache) => {
                                               class: "mt-2 align-self-start",
                                               onClick: _cache[11] || (_cache[11] = $event => (addPath('mp')))
                                             }, {
-                                              default: _withCtx(() => _cache[60] || (_cache[60] = [
+                                              default: _withCtx(() => _cache[73] || (_cache[73] = [
                                                 _createTextVNode(" 添加路径 ")
                                               ])),
                                               _: 1
@@ -1442,7 +1525,7 @@ return (_ctx, _cache) => {
                                             density: "compact",
                                             class: "mt-2"
                                           }, {
-                                            default: _withCtx(() => _cache[61] || (_cache[61] = [
+                                            default: _withCtx(() => _cache[74] || (_cache[74] = [
                                               _createTextVNode(" 媒体服务器映射路径和MP映射路径不一样时请配置此项，如果不配置则无法正常刷新。"),
                                               _createElementVNode("br", null, null, -1),
                                               _createTextVNode(" 当映射路径一样时可省略此配置。 ")
@@ -1535,7 +1618,7 @@ return (_ctx, _cache) => {
                                                   }, null, 8, ["modelValue", "onUpdate:modelValue", "onClick:append"])
                                                 ]),
                                                 _createVNode(_component_v_icon, null, {
-                                                  default: _withCtx(() => _cache[62] || (_cache[62] = [
+                                                  default: _withCtx(() => _cache[75] || (_cache[75] = [
                                                     _createTextVNode("mdi-pound")
                                                   ])),
                                                   _: 1
@@ -1559,7 +1642,7 @@ return (_ctx, _cache) => {
                                                 }, {
                                                   default: _withCtx(() => [
                                                     _createVNode(_component_v_icon, null, {
-                                                      default: _withCtx(() => _cache[63] || (_cache[63] = [
+                                                      default: _withCtx(() => _cache[76] || (_cache[76] = [
                                                         _createTextVNode("mdi-delete")
                                                       ])),
                                                       _: 1
@@ -1576,7 +1659,7 @@ return (_ctx, _cache) => {
                                               class: "mt-2 align-self-start",
                                               onClick: _cache[15] || (_cache[15] = $event => (addPath('fullSync')))
                                             }, {
-                                              default: _withCtx(() => _cache[64] || (_cache[64] = [
+                                              default: _withCtx(() => _cache[77] || (_cache[77] = [
                                                 _createTextVNode(" 添加路径 ")
                                               ])),
                                               _: 1
@@ -1588,7 +1671,7 @@ return (_ctx, _cache) => {
                                             density: "compact",
                                             class: "mt-2"
                                           }, {
-                                            default: _withCtx(() => _cache[65] || (_cache[65] = [
+                                            default: _withCtx(() => _cache[78] || (_cache[78] = [
                                               _createTextVNode(" 全量扫描配置的网盘目录，并在对应的本地目录生成STRM文件。"),
                                               _createElementVNode("br", null, null, -1),
                                               _createTextVNode(" 格式：本地STRM目录#网盘媒体库目录 ")
@@ -1729,7 +1812,7 @@ return (_ctx, _cache) => {
                                                   }, null, 8, ["modelValue", "onUpdate:modelValue", "onClick:append"])
                                                 ]),
                                                 _createVNode(_component_v_icon, null, {
-                                                  default: _withCtx(() => _cache[66] || (_cache[66] = [
+                                                  default: _withCtx(() => _cache[79] || (_cache[79] = [
                                                     _createTextVNode("mdi-pound")
                                                   ])),
                                                   _: 1
@@ -1753,7 +1836,7 @@ return (_ctx, _cache) => {
                                                 }, {
                                                   default: _withCtx(() => [
                                                     _createVNode(_component_v_icon, null, {
-                                                      default: _withCtx(() => _cache[67] || (_cache[67] = [
+                                                      default: _withCtx(() => _cache[80] || (_cache[80] = [
                                                         _createTextVNode("mdi-delete")
                                                       ])),
                                                       _: 1
@@ -1770,7 +1853,7 @@ return (_ctx, _cache) => {
                                               class: "mt-2 align-self-start",
                                               onClick: _cache[22] || (_cache[22] = $event => (addPath('monitorLife')))
                                             }, {
-                                              default: _withCtx(() => _cache[68] || (_cache[68] = [
+                                              default: _withCtx(() => _cache[81] || (_cache[81] = [
                                                 _createTextVNode(" 添加路径 ")
                                               ])),
                                               _: 1
@@ -1782,7 +1865,7 @@ return (_ctx, _cache) => {
                                             density: "compact",
                                             class: "mt-2"
                                           }, {
-                                            default: _withCtx(() => _cache[69] || (_cache[69] = [
+                                            default: _withCtx(() => _cache[82] || (_cache[82] = [
                                               _createTextVNode(" 监控115生活（上传、移动、接收文件、删除、复制）事件，自动在此处配置的本地目录生成对应的STRM文件或删除。"),
                                               _createElementVNode("br", null, null, -1),
                                               _createTextVNode(" 格式：本地STRM目录#网盘媒体库目录 ")
@@ -1814,7 +1897,7 @@ return (_ctx, _cache) => {
                                                   }, null, 8, ["modelValue", "onUpdate:modelValue"])
                                                 ]),
                                                 _createVNode(_component_v_icon, null, {
-                                                  default: _withCtx(() => _cache[70] || (_cache[70] = [
+                                                  default: _withCtx(() => _cache[83] || (_cache[83] = [
                                                     _createTextVNode("mdi-pound")
                                                   ])),
                                                   _: 1
@@ -1836,7 +1919,7 @@ return (_ctx, _cache) => {
                                                 }, {
                                                   default: _withCtx(() => [
                                                     _createVNode(_component_v_icon, null, {
-                                                      default: _withCtx(() => _cache[71] || (_cache[71] = [
+                                                      default: _withCtx(() => _cache[84] || (_cache[84] = [
                                                         _createTextVNode("mdi-delete")
                                                       ])),
                                                       _: 1
@@ -1853,7 +1936,7 @@ return (_ctx, _cache) => {
                                               class: "mt-2 align-self-start",
                                               onClick: _cache[23] || (_cache[23] = $event => (addPath('monitorLifeMp')))
                                             }, {
-                                              default: _withCtx(() => _cache[72] || (_cache[72] = [
+                                              default: _withCtx(() => _cache[85] || (_cache[85] = [
                                                 _createTextVNode(" 添加路径 ")
                                               ])),
                                               _: 1
@@ -1865,7 +1948,7 @@ return (_ctx, _cache) => {
                                             density: "compact",
                                             class: "mt-2"
                                           }, {
-                                            default: _withCtx(() => _cache[73] || (_cache[73] = [
+                                            default: _withCtx(() => _cache[86] || (_cache[86] = [
                                               _createTextVNode(" 媒体服务器映射路径和MP映射路径不一样时请配置此项，如果不配置则无法正常刷新。"),
                                               _createElementVNode("br", null, null, -1),
                                               _createTextVNode(" 当映射路径一样时可省略此配置。 ")
@@ -1894,7 +1977,7 @@ return (_ctx, _cache) => {
                                     density: "compact",
                                     class: "mb-4"
                                   }, {
-                                    default: _withCtx(() => _cache[74] || (_cache[74] = [
+                                    default: _withCtx(() => _cache[87] || (_cache[87] = [
                                       _createTextVNode(" 注意，清空 回收站/我的接收 后文件不可恢复，如果产生重要数据丢失本程序不负责！ ")
                                     ])),
                                     _: 1
@@ -2024,7 +2107,7 @@ return (_ctx, _cache) => {
                                                 }, {
                                                   default: _withCtx(() => [
                                                     _createVNode(_component_v_icon, null, {
-                                                      default: _withCtx(() => _cache[75] || (_cache[75] = [
+                                                      default: _withCtx(() => _cache[88] || (_cache[88] = [
                                                         _createTextVNode("mdi-delete")
                                                       ])),
                                                       _: 1
@@ -2041,7 +2124,7 @@ return (_ctx, _cache) => {
                                               class: "mt-2 align-self-start",
                                               onClick: addPanTransferPath
                                             }, {
-                                              default: _withCtx(() => _cache[76] || (_cache[76] = [
+                                              default: _withCtx(() => _cache[89] || (_cache[89] = [
                                                 _createTextVNode(" 添加路径 ")
                                               ])),
                                               _: 1
@@ -2059,7 +2142,7 @@ return (_ctx, _cache) => {
                                     density: "compact",
                                     class: "mt-2"
                                   }, {
-                                    default: _withCtx(() => _cache[77] || (_cache[77] = [
+                                    default: _withCtx(() => _cache[90] || (_cache[90] = [
                                       _createTextVNode(" 使用本功能需要先进入 设定-目录 进行配置："),
                                       _createElementVNode("br", null, null, -1),
                                       _createTextVNode(" 1. 添加目录配置卡，按需配置媒体类型和媒体类别，资源存储选择115网盘，资源目录输入网盘待整理文件夹"),
@@ -2077,7 +2160,7 @@ return (_ctx, _cache) => {
                                     density: "compact",
                                     class: "mt-2"
                                   }, {
-                                    default: _withCtx(() => _cache[78] || (_cache[78] = [
+                                    default: _withCtx(() => _cache[91] || (_cache[91] = [
                                       _createTextVNode(" 注意：配置目录时不能选择刮削元数据，否则可能导致风控！ ")
                                     ])),
                                     _: 1
@@ -2088,7 +2171,7 @@ return (_ctx, _cache) => {
                                     density: "compact",
                                     class: "mt-2"
                                   }, {
-                                    default: _withCtx(() => _cache[79] || (_cache[79] = [
+                                    default: _withCtx(() => _cache[92] || (_cache[92] = [
                                       _createTextVNode(" 注意：115生活事件监控会忽略网盘整理触发的移动事件，所以必须使用MP整理事件监控生成STRM ")
                                     ])),
                                     _: 1
@@ -2116,7 +2199,7 @@ return (_ctx, _cache) => {
                                             color: "blue-grey",
                                             size: "small"
                                           }),
-                                          _cache[80] || (_cache[80] = _createElementVNode("span", null, "115 Cookie 失效通知", -1))
+                                          _cache[93] || (_cache[93] = _createElementVNode("span", null, "115 Cookie 失效通知", -1))
                                         ]),
                                         _: 1
                                       }),
@@ -2182,7 +2265,7 @@ return (_ctx, _cache) => {
                                             color: "teal",
                                             size: "small"
                                           }),
-                                          _cache[81] || (_cache[81] = _createElementVNode("span", null, "PicGo.net 图床服务", -1))
+                                          _cache[94] || (_cache[94] = _createElementVNode("span", null, "PicGo.net 图床服务", -1))
                                         ]),
                                         _: 1
                                       }),
@@ -2263,7 +2346,7 @@ return (_ctx, _cache) => {
                                             density: "compact",
                                             class: "mt-2"
                                           }, {
-                                            default: _withCtx(() => _cache[82] || (_cache[82] = [
+                                            default: _withCtx(() => _cache[95] || (_cache[95] = [
                                               _createTextVNode(" 启用后，当115 Cookie失效发送通知时，登录二维码图片将尝试上传至PicGo.net，通知中将使用图床链接。"),
                                               _createElementVNode("br", null, null, -1),
                                               _createTextVNode(" 这可以提高二维码在通知消息中的兼容性和可点击性。 ")
@@ -2276,6 +2359,414 @@ return (_ctx, _cache) => {
                                     ]),
                                     _: 1
                                   })
+                                ]),
+                                _: 1
+                              })
+                            ]),
+                            _: 1
+                          }),
+                          _createVNode(_component_v_window_item, { value: "tab-mediawarp" }, {
+                            default: _withCtx(() => [
+                              _createVNode(_component_v_card_text, null, {
+                                default: _withCtx(() => [
+                                  _createVNode(_component_v_card, {
+                                    flat: "",
+                                    class: "rounded mb-3 border config-card"
+                                  }, {
+                                    default: _withCtx(() => [
+                                      _createVNode(_component_v_card_title, { class: "text-subtitle-2 d-flex align-center px-3 py-1 bg-primary-lighten-5" }, {
+                                        default: _withCtx(() => [
+                                          _createVNode(_component_v_icon, {
+                                            icon: "mdi-cog",
+                                            class: "mr-2",
+                                            color: "primary",
+                                            size: "small"
+                                          }),
+                                          _cache[96] || (_cache[96] = _createElementVNode("span", null, "基础设置", -1))
+                                        ]),
+                                        _: 1
+                                      }),
+                                      _createVNode(_component_v_card_text, { class: "pa-3" }, {
+                                        default: _withCtx(() => [
+                                          _createVNode(_component_v_row, null, {
+                                            default: _withCtx(() => [
+                                              _createVNode(_component_v_col, {
+                                                cols: "12",
+                                                md: "4"
+                                              }, {
+                                                default: _withCtx(() => [
+                                                  _createVNode(_component_v_switch, {
+                                                    modelValue: config.mediawarp_enabled,
+                                                    "onUpdate:modelValue": _cache[34] || (_cache[34] = $event => ((config.mediawarp_enabled) = $event)),
+                                                    label: "启用插件",
+                                                    color: "primary",
+                                                    density: "compact",
+                                                    inset: "",
+                                                    disabled: loading.value
+                                                  }, null, 8, ["modelValue", "disabled"])
+                                                ]),
+                                                _: 1
+                                              }),
+                                              _createVNode(_component_v_col, {
+                                                cols: "12",
+                                                md: "4"
+                                              }, {
+                                                default: _withCtx(() => [
+                                                  _createVNode(_component_v_text_field, {
+                                                    modelValue: config.mediawarp_port,
+                                                    "onUpdate:modelValue": _cache[35] || (_cache[35] = $event => ((config.mediawarp_port) = $event)),
+                                                    label: "端口",
+                                                    hint: "反代后媒体服务器访问端口",
+                                                    "persistent-hint": "",
+                                                    density: "compact",
+                                                    variant: "outlined",
+                                                    "hide-details": "auto",
+                                                    disabled: !config.mediawarp_enabled || loading.value
+                                                  }, null, 8, ["modelValue", "disabled"])
+                                                ]),
+                                                _: 1
+                                              }),
+                                              _createVNode(_component_v_col, {
+                                                cols: "12",
+                                                md: "4"
+                                              }, {
+                                                default: _withCtx(() => [
+                                                  _createVNode(_component_v_select, {
+                                                    modelValue: config.mediawarp_mediaservers,
+                                                    "onUpdate:modelValue": _cache[36] || (_cache[36] = $event => ((config.mediawarp_mediaservers) = $event)),
+                                                    label: "媒体服务器",
+                                                    items: mediaservers.value,
+                                                    multiple: false,
+                                                    clearable: "",
+                                                    hint: "同时只能选择一个",
+                                                    "persistent-hint": "",
+                                                    density: "compact",
+                                                    variant: "outlined",
+                                                    "hide-details": "auto",
+                                                    disabled: !config.mediawarp_enabled || loading.value
+                                                  }, null, 8, ["modelValue", "items", "disabled"])
+                                                ]),
+                                                _: 1
+                                              })
+                                            ]),
+                                            _: 1
+                                          }),
+                                          _createVNode(_component_v_row, null, {
+                                            default: _withCtx(() => [
+                                              _createVNode(_component_v_col, { cols: "12" }, {
+                                                default: _withCtx(() => [
+                                                  _cache[100] || (_cache[100] = _createElementVNode("div", { class: "text-subtitle-2 mb-1" }, "Emby STRM 媒体库路径", -1)),
+                                                  _createElementVNode("div", _hoisted_19, [
+                                                    (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(mediawarpStrmLocalPaths.value, (item, index) => {
+                                                      return (_openBlock(), _createElementBlock("div", {
+                                                        key: `mediawarp-strm-${index}`,
+                                                        class: "mb-2 d-flex align-center"
+                                                      }, [
+                                                        _createVNode(_component_v_text_field, {
+                                                          modelValue: item.path,
+                                                          "onUpdate:modelValue": $event => ((item.path) = $event),
+                                                          label: "本地STRM目录",
+                                                          density: "compact",
+                                                          variant: "outlined",
+                                                          "hide-details": "auto",
+                                                          "append-icon": "mdi-folder",
+                                                          "onClick:append": $event => (openDirSelector(index, 'local', 'mediawarpStrm')),
+                                                          class: "flex-grow-1",
+                                                          disabled: !config.mediawarp_enabled || loading.value
+                                                        }, null, 8, ["modelValue", "onUpdate:modelValue", "onClick:append", "disabled"]),
+                                                        _createVNode(_component_v_btn, {
+                                                          icon: "",
+                                                          size: "small",
+                                                          color: "error",
+                                                          class: "ml-2",
+                                                          onClick: $event => (removePath(index, 'mediawarpStrm')),
+                                                          disabled: !config.mediawarp_enabled || loading.value || mediawarpStrmLocalPaths.value.length <= 1 && !item.path
+                                                        }, {
+                                                          default: _withCtx(() => [
+                                                            _createVNode(_component_v_icon, null, {
+                                                              default: _withCtx(() => _cache[97] || (_cache[97] = [
+                                                                _createTextVNode("mdi-delete")
+                                                              ])),
+                                                              _: 1
+                                                            })
+                                                          ]),
+                                                          _: 2
+                                                        }, 1032, ["onClick", "disabled"])
+                                                      ]))
+                                                    }), 128)),
+                                                    _createVNode(_component_v_btn, {
+                                                      size: "small",
+                                                      "prepend-icon": "mdi-plus",
+                                                      variant: "outlined",
+                                                      class: "mt-1 align-self-start",
+                                                      onClick: _cache[37] || (_cache[37] = $event => (addPath('mediawarpStrm'))),
+                                                      disabled: !config.mediawarp_enabled || loading.value
+                                                    }, {
+                                                      default: _withCtx(() => _cache[98] || (_cache[98] = [
+                                                        _createTextVNode(" 添加路径 ")
+                                                      ])),
+                                                      _: 1
+                                                    }, 8, ["disabled"])
+                                                  ]),
+                                                  _createVNode(_component_v_alert, {
+                                                    type: "info",
+                                                    variant: "tonal",
+                                                    density: "compact",
+                                                    class: "mt-2 text-caption"
+                                                  }, {
+                                                    default: _withCtx(() => _cache[99] || (_cache[99] = [
+                                                      _createTextVNode(" MediaWarp 将处理的STRM文件所在目录，一行一个。会自动带入115助手的本地STRM目录，可在此基础上增改。 ")
+                                                    ])),
+                                                    _: 1
+                                                  })
+                                                ]),
+                                                _: 1
+                                              })
+                                            ]),
+                                            _: 1
+                                          }),
+                                          _createVNode(_component_v_alert, {
+                                            type: "info",
+                                            variant: "tonal",
+                                            density: "compact",
+                                            class: "mt-3"
+                                          }, {
+                                            default: _withCtx(() => _cache[101] || (_cache[101] = [
+                                              _createElementVNode("div", null, "注意：", -1),
+                                              _createElementVNode("div", null, "如果 MoviePilot 容器为 bridge 模式需要手动映射配置的端口", -1),
+                                              _createElementVNode("div", null, "更多配置可以前往 MoviePilot 配置目录找到此插件的配置目录进行详细配置文件配置", -1)
+                                            ])),
+                                            _: 1
+                                          }),
+                                          _createVNode(_component_v_alert, {
+                                            type: "info",
+                                            variant: "tonal",
+                                            density: "compact",
+                                            class: "mt-2"
+                                          }, {
+                                            default: _withCtx(() => _cache[102] || (_cache[102] = [
+                                              _createElementVNode("div", null, "目前支持 115网盘STRM助手，123云盘STRM助手，CloudMediaSync，OneStrm", -1),
+                                              _createElementVNode("div", null, "Symedia，q115-strm 等软件生成的STRM文件", -1)
+                                            ])),
+                                            _: 1
+                                          }),
+                                          _createVNode(_component_v_alert, {
+                                            type: "info",
+                                            variant: "tonal",
+                                            density: "compact",
+                                            class: "mt-2"
+                                          }, {
+                                            default: _withCtx(() => _cache[103] || (_cache[103] = [
+                                              _createElementVNode("div", null, "感谢项目作者：https://github.com/Akimio521/MediaWarp", -1)
+                                            ])),
+                                            _: 1
+                                          })
+                                        ]),
+                                        _: 1
+                                      })
+                                    ]),
+                                    _: 1
+                                  }),
+                                  _createVNode(_component_v_card, {
+                                    flat: "",
+                                    class: "rounded mb-3 border config-card",
+                                    disabled: !config.mediawarp_enabled || loading.value
+                                  }, {
+                                    default: _withCtx(() => [
+                                      _createVNode(_component_v_card_title, { class: "text-subtitle-2 d-flex align-center px-3 py-1 bg-primary-lighten-5" }, {
+                                        default: _withCtx(() => [
+                                          _createVNode(_component_v_icon, {
+                                            icon: "mdi-file-move-outline",
+                                            class: "mr-2",
+                                            color: "primary",
+                                            size: "small"
+                                          }),
+                                          _cache[104] || (_cache[104] = _createElementVNode("span", null, "Web页面配置", -1))
+                                        ]),
+                                        _: 1
+                                      }),
+                                      _createVNode(_component_v_card_text, { class: "pa-3" }, {
+                                        default: _withCtx(() => [
+                                          _createVNode(_component_v_row, null, {
+                                            default: _withCtx(() => [
+                                              _createVNode(_component_v_col, {
+                                                cols: "12",
+                                                md: "4"
+                                              }, {
+                                                default: _withCtx(() => [
+                                                  _createVNode(_component_v_switch, {
+                                                    modelValue: config.mediawarp_crx,
+                                                    "onUpdate:modelValue": _cache[38] || (_cache[38] = $event => ((config.mediawarp_crx) = $event)),
+                                                    label: "CRX美化",
+                                                    hint: "crx 美化",
+                                                    "persistent-hint": "",
+                                                    color: "primary",
+                                                    density: "compact",
+                                                    inset: "",
+                                                    disabled: !config.mediawarp_enabled || loading.value
+                                                  }, null, 8, ["modelValue", "disabled"])
+                                                ]),
+                                                _: 1
+                                              }),
+                                              _createVNode(_component_v_col, {
+                                                cols: "12",
+                                                md: "4"
+                                              }, {
+                                                default: _withCtx(() => [
+                                                  _createVNode(_component_v_switch, {
+                                                    modelValue: config.mediawarp_actor_plus,
+                                                    "onUpdate:modelValue": _cache[39] || (_cache[39] = $event => ((config.mediawarp_actor_plus) = $event)),
+                                                    label: "头像过滤",
+                                                    hint: "过滤没有头像的演员和制作人员",
+                                                    "persistent-hint": "",
+                                                    color: "primary",
+                                                    density: "compact",
+                                                    inset: "",
+                                                    disabled: !config.mediawarp_enabled || loading.value
+                                                  }, null, 8, ["modelValue", "disabled"])
+                                                ]),
+                                                _: 1
+                                              }),
+                                              _createVNode(_component_v_col, {
+                                                cols: "12",
+                                                md: "4"
+                                              }, {
+                                                default: _withCtx(() => [
+                                                  _createVNode(_component_v_switch, {
+                                                    modelValue: config.mediawarp_fanart_show,
+                                                    "onUpdate:modelValue": _cache[40] || (_cache[40] = $event => ((config.mediawarp_fanart_show) = $event)),
+                                                    label: "显示同人图",
+                                                    hint: "显示同人图（fanart 图）",
+                                                    "persistent-hint": "",
+                                                    color: "primary",
+                                                    density: "compact",
+                                                    inset: "",
+                                                    disabled: !config.mediawarp_enabled || loading.value
+                                                  }, null, 8, ["modelValue", "disabled"])
+                                                ]),
+                                                _: 1
+                                              })
+                                            ]),
+                                            _: 1
+                                          }),
+                                          _createVNode(_component_v_row, null, {
+                                            default: _withCtx(() => [
+                                              _createVNode(_component_v_col, {
+                                                cols: "12",
+                                                md: "4"
+                                              }, {
+                                                default: _withCtx(() => [
+                                                  _createVNode(_component_v_switch, {
+                                                    modelValue: config.mediawarp_external_player_url,
+                                                    "onUpdate:modelValue": _cache[41] || (_cache[41] = $event => ((config.mediawarp_external_player_url) = $event)),
+                                                    label: "外置播放器",
+                                                    hint: "是否开启外置播放器（仅 Emby）",
+                                                    "persistent-hint": "",
+                                                    color: "primary",
+                                                    density: "compact",
+                                                    inset: "",
+                                                    disabled: !config.mediawarp_enabled || loading.value
+                                                  }, null, 8, ["modelValue", "disabled"])
+                                                ]),
+                                                _: 1
+                                              }),
+                                              _createVNode(_component_v_col, {
+                                                cols: "12",
+                                                md: "4"
+                                              }, {
+                                                default: _withCtx(() => [
+                                                  _createVNode(_component_v_switch, {
+                                                    modelValue: config.mediawarp_danmaku,
+                                                    "onUpdate:modelValue": _cache[42] || (_cache[42] = $event => ((config.mediawarp_danmaku) = $event)),
+                                                    label: "Web弹幕",
+                                                    hint: "Web 弹幕",
+                                                    "persistent-hint": "",
+                                                    color: "primary",
+                                                    density: "compact",
+                                                    inset: "",
+                                                    disabled: !config.mediawarp_enabled || loading.value
+                                                  }, null, 8, ["modelValue", "disabled"])
+                                                ]),
+                                                _: 1
+                                              }),
+                                              _createVNode(_component_v_col, {
+                                                cols: "12",
+                                                md: "4"
+                                              }, {
+                                                default: _withCtx(() => [
+                                                  _createVNode(_component_v_switch, {
+                                                    modelValue: config.mediawarp_video_together,
+                                                    "onUpdate:modelValue": _cache[43] || (_cache[43] = $event => ((config.mediawarp_video_together) = $event)),
+                                                    label: "共同观影",
+                                                    hint: "共同观影",
+                                                    "persistent-hint": "",
+                                                    color: "primary",
+                                                    density: "compact",
+                                                    inset: "",
+                                                    disabled: !config.mediawarp_enabled || loading.value
+                                                  }, null, 8, ["modelValue", "disabled"])
+                                                ]),
+                                                _: 1
+                                              })
+                                            ]),
+                                            _: 1
+                                          })
+                                        ]),
+                                        _: 1
+                                      })
+                                    ]),
+                                    _: 1
+                                  }, 8, ["disabled"]),
+                                  _createVNode(_component_v_card, {
+                                    flat: "",
+                                    class: "rounded mb-3 border config-card",
+                                    disabled: !config.mediawarp_enabled || loading.value
+                                  }, {
+                                    default: _withCtx(() => [
+                                      _createVNode(_component_v_card_title, { class: "text-subtitle-2 d-flex align-center px-3 py-1 bg-primary-lighten-5" }, {
+                                        default: _withCtx(() => [
+                                          _createVNode(_component_v_icon, {
+                                            icon: "mdi-sync",
+                                            class: "mr-2",
+                                            color: "primary",
+                                            size: "small"
+                                          }),
+                                          _cache[105] || (_cache[105] = _createElementVNode("span", null, "字幕相关设置", -1))
+                                        ]),
+                                        _: 1
+                                      }),
+                                      _createVNode(_component_v_card_text, { class: "pa-3" }, {
+                                        default: _withCtx(() => [
+                                          _createVNode(_component_v_row, null, {
+                                            default: _withCtx(() => [
+                                              _createVNode(_component_v_col, {
+                                                cols: "12",
+                                                md: "4"
+                                              }, {
+                                                default: _withCtx(() => [
+                                                  _createVNode(_component_v_switch, {
+                                                    modelValue: config.mediawarp_srt2ass,
+                                                    "onUpdate:modelValue": _cache[44] || (_cache[44] = $event => ((config.mediawarp_srt2ass) = $event)),
+                                                    label: "SRT转ASS",
+                                                    hint: "SRT 字幕转 ASS 字幕",
+                                                    "persistent-hint": "",
+                                                    color: "primary",
+                                                    density: "compact",
+                                                    inset: "",
+                                                    disabled: !config.mediawarp_enabled || loading.value
+                                                  }, null, 8, ["modelValue", "disabled"])
+                                                ]),
+                                                _: 1
+                                              })
+                                            ]),
+                                            _: 1
+                                          })
+                                        ]),
+                                        _: 1
+                                      })
+                                    ]),
+                                    _: 1
+                                  }, 8, ["disabled"])
                                 ]),
                                 _: 1
                               })
@@ -2300,11 +2791,11 @@ return (_ctx, _cache) => {
             _createVNode(_component_v_btn, {
               color: "info",
               variant: "text",
-              onClick: _cache[35] || (_cache[35] = $event => (emit('switch'))),
+              onClick: _cache[46] || (_cache[46] = $event => (emit('switch'))),
               size: "small",
               "prepend-icon": "mdi-close"
             }, {
-              default: _withCtx(() => _cache[83] || (_cache[83] = [
+              default: _withCtx(() => _cache[106] || (_cache[106] = [
                 _createTextVNode(" 返回 ")
               ])),
               _: 1
@@ -2318,7 +2809,7 @@ return (_ctx, _cache) => {
               size: "small",
               "prepend-icon": "mdi-sync"
             }, {
-              default: _withCtx(() => _cache[84] || (_cache[84] = [
+              default: _withCtx(() => _cache[107] || (_cache[107] = [
                 _createTextVNode(" 全量同步 ")
               ])),
               _: 1
@@ -2331,7 +2822,7 @@ return (_ctx, _cache) => {
               size: "small",
               "prepend-icon": "mdi-content-save"
             }, {
-              default: _withCtx(() => _cache[85] || (_cache[85] = [
+              default: _withCtx(() => _cache[108] || (_cache[108] = [
                 _createTextVNode(" 保存配置 ")
               ])),
               _: 1
@@ -2344,7 +2835,7 @@ return (_ctx, _cache) => {
     }),
     _createVNode(_component_v_dialog, {
       modelValue: dirDialog.show,
-      "onUpdate:modelValue": _cache[37] || (_cache[37] = $event => ((dirDialog.show) = $event)),
+      "onUpdate:modelValue": _cache[48] || (_cache[48] = $event => ((dirDialog.show) = $event)),
       "max-width": "800"
     }, {
       default: _withCtx(() => [
@@ -2364,16 +2855,16 @@ return (_ctx, _cache) => {
             _createVNode(_component_v_card_text, { class: "px-3 py-2" }, {
               default: _withCtx(() => [
                 (dirDialog.loading)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_19, [
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_20, [
                       _createVNode(_component_v_progress_circular, {
                         indeterminate: "",
                         color: "primary"
                       })
                     ]))
-                  : (_openBlock(), _createElementBlock("div", _hoisted_20, [
+                  : (_openBlock(), _createElementBlock("div", _hoisted_21, [
                       _createVNode(_component_v_text_field, {
                         modelValue: dirDialog.currentPath,
-                        "onUpdate:modelValue": _cache[36] || (_cache[36] = $event => ((dirDialog.currentPath) = $event)),
+                        "onUpdate:modelValue": _cache[47] || (_cache[47] = $event => ((dirDialog.currentPath) = $event)),
                         label: "当前路径",
                         variant: "outlined",
                         density: "compact",
@@ -2402,13 +2893,13 @@ return (_ctx, _cache) => {
                                 ]),
                                 default: _withCtx(() => [
                                   _createVNode(_component_v_list_item_title, { class: "text-body-2" }, {
-                                    default: _withCtx(() => _cache[86] || (_cache[86] = [
+                                    default: _withCtx(() => _cache[109] || (_cache[109] = [
                                       _createTextVNode("上级目录")
                                     ])),
                                     _: 1
                                   }),
                                   _createVNode(_component_v_list_item_subtitle, null, {
-                                    default: _withCtx(() => _cache[87] || (_cache[87] = [
+                                    default: _withCtx(() => _cache[110] || (_cache[110] = [
                                       _createTextVNode("..")
                                     ])),
                                     _: 1
@@ -2450,7 +2941,7 @@ return (_ctx, _cache) => {
                               }, {
                                 default: _withCtx(() => [
                                   _createVNode(_component_v_list_item_title, { class: "text-body-2 text-grey" }, {
-                                    default: _withCtx(() => _cache[88] || (_cache[88] = [
+                                    default: _withCtx(() => _cache[111] || (_cache[111] = [
                                       _createTextVNode("该目录为空或访问受限")
                                     ])),
                                     _: 1
@@ -2490,7 +2981,7 @@ return (_ctx, _cache) => {
                   variant: "text",
                   size: "small"
                 }, {
-                  default: _withCtx(() => _cache[89] || (_cache[89] = [
+                  default: _withCtx(() => _cache[112] || (_cache[112] = [
                     _createTextVNode(" 选择当前目录 ")
                   ])),
                   _: 1
@@ -2501,7 +2992,7 @@ return (_ctx, _cache) => {
                   variant: "text",
                   size: "small"
                 }, {
-                  default: _withCtx(() => _cache[90] || (_cache[90] = [
+                  default: _withCtx(() => _cache[113] || (_cache[113] = [
                     _createTextVNode(" 取消 ")
                   ])),
                   _: 1
@@ -2517,7 +3008,7 @@ return (_ctx, _cache) => {
     }, 8, ["modelValue"]),
     _createVNode(_component_v_dialog, {
       modelValue: qrDialog.show,
-      "onUpdate:modelValue": _cache[39] || (_cache[39] = $event => ((qrDialog.show) = $event)),
+      "onUpdate:modelValue": _cache[50] || (_cache[50] = $event => ((qrDialog.show) = $event)),
       "max-width": "450"
     }, {
       default: _withCtx(() => [
@@ -2531,7 +3022,7 @@ return (_ctx, _cache) => {
                   color: "primary",
                   size: "small"
                 }),
-                _cache[91] || (_cache[91] = _createElementVNode("span", null, "115网盘扫码登录", -1))
+                _cache[114] || (_cache[114] = _createElementVNode("span", null, "115网盘扫码登录", -1))
               ]),
               _: 1
             }),
@@ -2553,20 +3044,20 @@ return (_ctx, _cache) => {
                     }))
                   : _createCommentVNode("", true),
                 (qrDialog.loading)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_21, [
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_22, [
                       _createVNode(_component_v_progress_circular, {
                         indeterminate: "",
                         color: "primary",
                         class: "mb-3"
                       }),
-                      _cache[92] || (_cache[92] = _createElementVNode("div", null, "正在获取二维码...", -1))
+                      _cache[115] || (_cache[115] = _createElementVNode("div", null, "正在获取二维码...", -1))
                     ]))
                   : (qrDialog.qrcode)
-                    ? (_openBlock(), _createElementBlock("div", _hoisted_22, [
-                        _cache[95] || (_cache[95] = _createElementVNode("div", { class: "mb-2 font-weight-medium" }, "请选择扫码方式", -1)),
+                    ? (_openBlock(), _createElementBlock("div", _hoisted_23, [
+                        _cache[118] || (_cache[118] = _createElementVNode("div", { class: "mb-2 font-weight-medium" }, "请选择扫码方式", -1)),
                         _createVNode(_component_v_chip_group, {
                           modelValue: qrDialog.clientType,
-                          "onUpdate:modelValue": _cache[38] || (_cache[38] = $event => ((qrDialog.clientType) = $event)),
+                          "onUpdate:modelValue": _cache[49] || (_cache[49] = $event => ((qrDialog.clientType) = $event)),
                           class: "mb-3",
                           mandatory: "",
                           "selected-class": "primary"
@@ -2589,7 +3080,7 @@ return (_ctx, _cache) => {
                           ]),
                           _: 1
                         }, 8, ["modelValue"]),
-                        _createElementVNode("div", _hoisted_23, [
+                        _createElementVNode("div", _hoisted_24, [
                           _createVNode(_component_v_card, {
                             flat: "",
                             class: "border pa-2 mb-2"
@@ -2599,12 +3090,12 @@ return (_ctx, _cache) => {
                                 src: qrDialog.qrcode,
                                 width: "220",
                                 height: "220"
-                              }, null, 8, _hoisted_24)
+                              }, null, 8, _hoisted_25)
                             ]),
                             _: 1
                           }),
-                          _createElementVNode("div", _hoisted_25, _toDisplayString(qrDialog.tips), 1),
-                          _createElementVNode("div", _hoisted_26, _toDisplayString(qrDialog.status), 1)
+                          _createElementVNode("div", _hoisted_26, _toDisplayString(qrDialog.tips), 1),
+                          _createElementVNode("div", _hoisted_27, _toDisplayString(qrDialog.status), 1)
                         ]),
                         _createVNode(_component_v_btn, {
                           color: "primary",
@@ -2619,32 +3110,32 @@ return (_ctx, _cache) => {
                               size: "small",
                               class: "mr-1"
                             }, {
-                              default: _withCtx(() => _cache[93] || (_cache[93] = [
+                              default: _withCtx(() => _cache[116] || (_cache[116] = [
                                 _createTextVNode("mdi-refresh")
                               ])),
                               _: 1
                             }),
-                            _cache[94] || (_cache[94] = _createTextVNode("刷新二维码 "))
+                            _cache[117] || (_cache[117] = _createTextVNode("刷新二维码 "))
                           ]),
                           _: 1
                         })
                       ]))
-                    : (_openBlock(), _createElementBlock("div", _hoisted_27, [
+                    : (_openBlock(), _createElementBlock("div", _hoisted_28, [
                         _createVNode(_component_v_icon, {
                           icon: "mdi-qrcode-off",
                           size: "64",
                           color: "grey",
                           class: "mb-3"
                         }),
-                        _cache[97] || (_cache[97] = _createElementVNode("div", { class: "text-subtitle-1" }, "二维码获取失败", -1)),
-                        _cache[98] || (_cache[98] = _createElementVNode("div", { class: "text-body-2 text-grey" }, "请点击刷新按钮重试", -1)),
-                        _createElementVNode("div", _hoisted_28, [
+                        _cache[120] || (_cache[120] = _createElementVNode("div", { class: "text-subtitle-1" }, "二维码获取失败", -1)),
+                        _cache[121] || (_cache[121] = _createElementVNode("div", { class: "text-body-2 text-grey" }, "请点击刷新按钮重试", -1)),
+                        _createElementVNode("div", _hoisted_29, [
                           _createVNode(_component_v_icon, {
                             icon: "mdi-alert-circle",
                             size: "small",
                             class: "mr-1 text-warning"
                           }),
-                          _cache[96] || (_cache[96] = _createTextVNode(" 如果多次获取失败，请检查网络连接 "))
+                          _cache[119] || (_cache[119] = _createTextVNode(" 如果多次获取失败，请检查网络连接 "))
                         ])
                       ]))
               ]),
@@ -2660,7 +3151,7 @@ return (_ctx, _cache) => {
                   size: "small",
                   "prepend-icon": "mdi-close"
                 }, {
-                  default: _withCtx(() => _cache[99] || (_cache[99] = [
+                  default: _withCtx(() => _cache[122] || (_cache[122] = [
                     _createTextVNode("关闭")
                   ])),
                   _: 1
@@ -2674,7 +3165,7 @@ return (_ctx, _cache) => {
                   size: "small",
                   "prepend-icon": "mdi-refresh"
                 }, {
-                  default: _withCtx(() => _cache[100] || (_cache[100] = [
+                  default: _withCtx(() => _cache[123] || (_cache[123] = [
                     _createTextVNode(" 刷新二维码 ")
                   ])),
                   _: 1
@@ -2693,6 +3184,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-ae2e2caa"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-81d2f0c3"]]);
 
 export { Config as default };

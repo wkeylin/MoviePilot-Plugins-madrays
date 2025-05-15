@@ -2,6 +2,13 @@ import threading
 import sys
 import time
 import shutil
+import platform
+import tarfile
+import tempfile
+import os # <-- ADDED IMPORT
+from ruamel.yaml import YAML
+from ruamel.yaml.representer import RoundTripRepresenter
+import psutil
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from threading import Event as ThreadEvent
@@ -46,6 +53,14 @@ from app.chain.media import MediaChain
 from app.helper.mediaserver import MediaServerHelper
 from app.utils.system import SystemUtils
 
+# 新增 MediaWarp 相关 imports
+import platform
+import tarfile
+import tempfile
+from ruamel.yaml import YAML
+from ruamel.yaml.representer import RoundTripRepresenter
+import psutil
+# ---
 
 p1115strmhelper_lock = threading.Lock()
 
@@ -525,7 +540,7 @@ class P1115StrmHelper(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png"
     # 插件版本
-    plugin_version = "9999.99.99"
+    plugin_version = "100000.1.1"
     # 插件作者
     plugin_author = "VUE测试版"
     # 作者主页
@@ -593,183 +608,654 @@ class P1115StrmHelper(_PluginBase):
     _picgo_enabled: bool = False
     _picgo_api_key: str = ""
     _picgo_upload_url: str = "https://www.picgo.net/api/1/upload"
+
+    # MediaWarp 集成相关属性
+    _mediawarp_process: Optional[psutil.Process] = None
+    _mediawarp_enabled: bool = False
+    _mediawarp_port: str = '18699'
+    _mediawarp_media_strm_path: str = ""
+    _mediawarp_mediaserver_name: Optional[str] = None
+    _mediawarp_emby_type: Optional[str] = None 
+    _mediawarp_emby_host: Optional[str] = None
+    _mediawarp_emby_apikey: Optional[str] = None
+    _mediawarp_crx: bool = False
+    _mediawarp_actor_plus: bool = False
+    _mediawarp_fanart_show: bool = False
+    _mediawarp_external_player_url: bool = False
+    _mediawarp_danmaku: bool = False
+    _mediawarp_video_together: bool = False
+    _mediawarp_srt2ass: bool = False
+    __MEDIAWARP_DEFAULT_VERSION: str = "0.1.8"
+    # 以下路径属性将在 __init__ 中初始化
+    _mediawarp_base_data_path: Optional[Path] = None
+    __mediawarp_binary_path: Optional[Path] = None
+    __mediawarp_config_dir_path: Optional[Path] = None
+    __mediawarp_logs_dir_path: Optional[Path] = None
+    __mediawarp_config_yaml_path: Optional[Path] = None
+    __mediawarp_version_file_path: Optional[Path] = None
+    # ---
+
     # 退出事件
     _event = ThreadEvent()
     monitor_stop_event = None # General stop event for long-running tasks like life monitor
     _qr_polling_stop_event = None # Specific stop event for QR code polling threads
     monitor_life_thread = None
 
+    def __init__(self):
+        super().__init__()
+        self.mediaserver_helper = MediaServerHelper()
+        self.id_path_cache = IdPathCache()
+        self.transferchain = TransferChain()
+        self.mediachain = MediaChain()
+        self.cache_delete_pan_transfer_list = TTLCache(maxsize=1024, ttl=60 * 60 * 24)
+        self.cache_creata_pan_transfer_list = TTLCache(maxsize=1024, ttl=60 * 60 * 24)
+
+        plugin_data_dir_name = getattr(self, 'plugin_id', self.__class__.__name__.lower())
+        if not plugin_data_dir_name: # Fallback if plugin_id is not set
+            plugin_data_dir_name = "p1115strmhelper"
+
+        # MediaWarp 相关路径定义及属性初始化
+        self._mediawarp_base_data_path = settings.PLUGIN_DATA_PATH / plugin_data_dir_name / "mediawarp_files"
+        self.__mediawarp_binary_path = self._mediawarp_base_data_path / "MediaWarp"
+        self.__mediawarp_config_dir_path = self._mediawarp_base_data_path / "config"
+        self.__mediawarp_logs_dir_path = self._mediawarp_base_data_path / "logs" 
+        self.__mediawarp_config_yaml_path = self.__mediawarp_config_dir_path / "config.yaml"
+        self.__mediawarp_version_file_path = self._mediawarp_base_data_path / "version.txt"
+        
+        # 初始化 MediaWarp 配置相关的实例变量 (这些会被 init_plugin 中的加载覆盖)
+        self._mediawarp_enabled = False
+        self._mediawarp_port = '18699'
+        self._mediawarp_media_strm_path = ""
+        self._mediawarp_mediaserver_name = None
+        self._mediawarp_emby_type = None
+        self._mediawarp_emby_host = None
+        self._mediawarp_emby_apikey = None
+        self._mediawarp_crx = False
+        self._mediawarp_actor_plus = False
+        self._mediawarp_fanart_show = False
+        self._mediawarp_external_player_url = False
+        self._mediawarp_danmaku = False
+        self._mediawarp_video_together = False
+        self._mediawarp_srt2ass = False
+        self._mediawarp_process = None # psutil.Process object
+
+        # 确保 MediaWarp 所需的目录存在
+        self._mediawarp_base_data_path.mkdir(parents=True, exist_ok=True)
+        self.__mediawarp_config_dir_path.mkdir(parents=True, exist_ok=True)
+        self.__mediawarp_logs_dir_path.mkdir(parents=True, exist_ok=True)
+
     def debug_log(self, message):
         """记录调试日志"""
         logger.debug(f"【P1115StrmHelper】{message}")
 
     def init_plugin(self, config: dict = None):
-        """
-        初始化插件
-        """
-        self.mediaserver_helper = MediaServerHelper()
-        self.transferchain = TransferChain()
-        self.mediachain = MediaChain()
-        self.monitor_stop_event = threading.Event()
-        self._qr_polling_stop_event = threading.Event() # Initialize the new event
+        self.debug_log("Initializing P1115StrmHelper plugin...")
+        # 初始化事件和调度器
+        self._event.clear()
+        self.monitor_stop_event = ThreadEvent()
+        self._qr_polling_stop_event = ThreadEvent()
+        self._scheduler = BackgroundScheduler(timezone=settings.TZ)
 
-        self.id_path_cache = IdPathCache()
-        self.cache_delete_pan_transfer_list = []
-        self.cache_creata_pan_transfer_list = []
-        
+        # 确保Python版本符合要求
+        if not self.__check_python_version():
+            logger.error("Python 版本过低，插件可能无法正常运行！")
+            # 可以选择在这里阻止插件进一步加载或发出更强的警告
+
         if config:
-            self._enabled = config.get("enabled")
-            self._once_full_sync_strm = config.get("once_full_sync_strm")
+            self._enabled = config.get("enabled", False)
             self._cookies = config.get("cookies")
             self._password = config.get("password")
             self.moviepilot_address = config.get("moviepilot_address")
-            self._user_rmt_mediaext = config.get("user_rmt_mediaext")
-            self._user_download_mediaext = config.get("user_download_mediaext")
-            self._transfer_monitor_enabled = config.get("transfer_monitor_enabled")
+            self._user_rmt_mediaext = config.get(
+                "user_rmt_mediaext",
+                "mp4,mkv,ts,iso,rmvb,avi,mov,mpeg,mpg,wmv,3gp,asf,m4v,flv,m2ts,tp,f4v",
+            )
+            self._user_download_mediaext = config.get(
+                "user_download_mediaext", "srt,ssa,ass"
+            )
+            self._transfer_monitor_enabled = config.get(
+                "transfer_monitor_enabled", False
+            )
             self._transfer_monitor_scrape_metadata_enabled = config.get(
-                "transfer_monitor_scrape_metadata_enabled"
+                "transfer_monitor_scrape_metadata_enabled", False
             )
             self._transfer_monitor_paths = config.get("transfer_monitor_paths")
             self._transfer_mp_mediaserver_paths = config.get(
                 "transfer_mp_mediaserver_paths"
             )
+            self._transfer_monitor_mediaservers = config.get(
+                "transfer_monitor_mediaservers"
+            )
             self._transfer_monitor_media_server_refresh_enabled = config.get(
-                "transfer_monitor_media_server_refresh_enabled"
+                "transfer_monitor_media_server_refresh_enabled", False
             )
-            self._transfer_monitor_mediaservers = (
-                config.get("transfer_monitor_mediaservers") or []
-            )
-            self._timing_full_sync_strm = config.get("timing_full_sync_strm")
+            self._timing_full_sync_strm = config.get("timing_full_sync_strm", False)
             self._full_sync_auto_download_mediainfo_enabled = config.get(
-                "full_sync_auto_download_mediainfo_enabled"
+                "full_sync_auto_download_mediainfo_enabled", False
             )
-            self._cron_full_sync_strm = config.get("cron_full_sync_strm")
+            self._cron_full_sync_strm = config.get(
+                "cron_full_sync_strm", "0 */7 * * *"
+            )
             self._full_sync_strm_paths = config.get("full_sync_strm_paths")
-            self._monitor_life_enabled = config.get("monitor_life_enabled")
+            self._monitor_life_enabled = config.get("monitor_life_enabled", False)
             self._monitor_life_auto_download_mediainfo_enabled = config.get(
-                "monitor_life_auto_download_mediainfo_enabled"
+                "monitor_life_auto_download_mediainfo_enabled", False
             )
             self._monitor_life_paths = config.get("monitor_life_paths")
             self._monitor_life_mp_mediaserver_paths = config.get(
                 "monitor_life_mp_mediaserver_paths"
             )
             self._monitor_life_media_server_refresh_enabled = config.get(
-                "monitor_life_media_server_refresh_enabled"
+                "monitor_life_media_server_refresh_enabled", False
             )
-            self._monitor_life_mediaservers = (
-                config.get("monitor_life_mediaservers") or []
-            )
+            self._monitor_life_mediaservers = config.get("monitor_life_mediaservers")
             self._monitor_life_auto_remove_local_enabled = config.get(
-                "monitor_life_auto_remove_local_enabled"
+                "monitor_life_auto_remove_local_enabled", False
             )
             self._monitor_life_scrape_metadata_enabled = config.get(
-                "monitor_life_scrape_metadata_enabled"
+                "monitor_life_scrape_metadata_enabled", False
             )
-            self._share_strm_enabled = config.get("share_strm_enabled")
+            self._share_strm_enabled = config.get("share_strm_enabled", False)
             self._share_strm_auto_download_mediainfo_enabled = config.get(
-                "share_strm_auto_download_mediainfo_enabled"
+                "share_strm_auto_download_mediainfo_enabled", False
             )
             self._user_share_code = config.get("user_share_code")
             self._user_receive_code = config.get("user_receive_code")
             self._user_share_link = config.get("user_share_link")
             self._user_share_pan_path = config.get("user_share_pan_path")
             self._user_share_local_path = config.get("user_share_local_path")
-            self._clear_recyclebin_enabled = config.get("clear_recyclebin_enabled")
-            self._clear_receive_path_enabled = config.get("clear_receive_path_enabled")
-            self._cron_clear = config.get("cron_clear")
-            self._pan_transfer_enabled = config.get("pan_transfer_enabled")
+            self._clear_recyclebin_enabled = config.get(
+                "clear_recyclebin_enabled", False
+            )
+            self._clear_receive_path_enabled = config.get(
+                "clear_receive_path_enabled", False
+            )
+            self._cron_clear = config.get("cron_clear", "0 */7 * * *")
+            self._pan_transfer_enabled = config.get("pan_transfer_enabled", False)
             self._pan_transfer_paths = config.get("pan_transfer_paths")
+
             self._cookie_error_notify_enabled = config.get("cookie_error_notify_enabled", False)
             self._cookie_error_notify_client_type = config.get("cookie_error_notify_client_type", "alipaymini")
             self._picgo_enabled = config.get("picgo_enabled", False)
             self._picgo_api_key = config.get("picgo_api_key", "")
             self._picgo_upload_url = config.get("picgo_upload_url", "https://www.picgo.net/api/1/upload")
-            if not self._user_rmt_mediaext:
-                self._user_rmt_mediaext = "mp4,mkv,ts,iso,rmvb,avi,mov,mpeg,mpg,wmv,3gp,asf,m4v,flv,m2ts,tp,f4v"
-            if not self._user_download_mediaext:
-                self._user_download_mediaext = "srt,ssa,ass"
-            if not self._cron_full_sync_strm:
-                self._cron_full_sync_strm = "0 */7 * * *"
-            if not self._cron_clear:
-                self._cron_clear = "0 */7 * * *"
-            if not self._user_share_pan_path:
-                self._user_share_pan_path = "/"
-            self.__update_config()
-            logger.info(f"【P1115StrmHelper】After config load in init_plugin: self._monitor_life_enabled: {self._monitor_life_enabled}, self._pan_transfer_enabled: {self._pan_transfer_enabled}, self._monitor_life_paths: {self._monitor_life_paths}, self._pan_transfer_paths: {self._pan_transfer_paths}")
 
-        if self.__check_python_version() is False:
-            self._enabled, self._once_full_sync_strm = False, False
-            self.__update_config()
+            # 加载 MediaWarp 配置
+            self._mediawarp_enabled = config.get("mediawarp_enabled", False)
+            self._mediawarp_port = config.get("mediawarp_port", '18699')
+            self._mediawarp_media_strm_path = config.get("mediawarp_media_strm_path", "")
+            # mediawarp_mediaservers 在前端是单选，所以直接获取字符串值
+            self._mediawarp_mediaserver_name = config.get("mediawarp_mediaservers") 
+            self._mediawarp_crx = config.get("mediawarp_crx", False)
+            self._mediawarp_actor_plus = config.get("mediawarp_actor_plus", False)
+            self._mediawarp_fanart_show = config.get("mediawarp_fanart_show", False)
+            self._mediawarp_external_player_url = config.get("mediawarp_external_player_url", False)
+            self._mediawarp_danmaku = config.get("mediawarp_danmaku", False)
+            self._mediawarp_video_together = config.get("mediawarp_video_together", False)
+            self._mediawarp_srt2ass = config.get("mediawarp_srt2ass", False)
+
+            # 获取为 MediaWarp 选择的媒体服务器的详细信息
+            if self._mediawarp_mediaserver_name:
+                # self.mediaserver_helper 已在 __init__ 中初始化
+                # get_services 需要一个列表，即使只有一个名称
+                servers = self.mediaserver_helper.get_services(name_filters=[self._mediawarp_mediaserver_name])
+                if servers:
+                    # get_services 返回字典，取第一个值
+                    server_instance = next(iter(servers.values()))
+                    if server_instance and server_instance.config:
+                        self._mediawarp_emby_type = server_instance.type # 'emby' or 'jellyfin'
+                        self._mediawarp_emby_host = server_instance.config.config.get("host")
+                        self._mediawarp_emby_apikey = server_instance.config.config.get("apikey")
+                        if self._mediawarp_emby_host and not self._mediawarp_emby_host.startswith("http"):
+                            self._mediawarp_emby_host = "http://" + self._mediawarp_emby_host
+                        if self._mediawarp_emby_host:
+                             self._mediawarp_emby_host = self._mediawarp_emby_host.rstrip("/")
+                    else:
+                        logger.warning(f"[MediaWarp] 未能获取媒体服务器 '{self._mediawarp_mediaserver_name}' 的配置详情。")
+                        self._mediawarp_mediaserver_name = None # 清除无效选择
+                else:
+                    logger.warning(f"[MediaWarp] 找不到名为 '{self._mediawarp_mediaserver_name}' 的媒体服务器配置。")
+                    self._mediawarp_mediaserver_name = None # 清除无效选择
+            else:
+                 # 如果没有选择媒体服务器，确保相关信息为空
+                self._mediawarp_emby_type = None
+                self._mediawarp_emby_host = None
+                self._mediawarp_emby_apikey = None
+
+        if self._enabled:
+            self.debug_log("P1115StrmHelper plugin is enabled.")
+            try:
+                self._client = P115Client(self._cookies, self._password)
+                userinfo = self._client.user_info()
+                if not userinfo:
+                    self._client = None
+                    logger.error("115 Cookie 无效，插件部分功能将无法使用")
+                    self._check_cookie_and_notify_if_invalid(context_message="插件初始化时检测到Cookie无效")
+                else:
+                    logger.info(f"115 登录成功：{userinfo.get('user_name')}")
+                    self.id_path_cache.clear()
+            except Exception as e:
+                self._client = None
+                logger.error(f"115 Client 初始化失败: {e}")
+                self._check_cookie_and_notify_if_invalid(context_message=f"115 Client 初始化失败: {e}")
+
+            # 处理一次性全量同步
+            if self._enabled and self._client and self._once_full_sync_strm:
+                logger.info("【P1115StrmHelper】检测到一次性全量同步请求，开始执行...")
+                try:
+                    self.full_sync_strm_files()
+                    logger.info("【P1115StrmHelper】一次性全量同步执行完成。")
+                except Exception as e:
+                    logger.error(f"【P1115StrmHelper】一次性全量同步执行失败: {e}", exc_info=True)
+                finally:
+                    self._once_full_sync_strm = False # 重置标志
+                    self.__update_config() # 保存重置后的标志
+            
+            # 添加定时任务
+            if self._timing_full_sync_strm:
+                try:
+                    self._scheduler.add_job(
+                        self.full_sync_strm_files,
+                        CronTrigger.from_crontab(self._cron_full_sync_strm),
+                        id="full_sync_strm",
+                        name="全量同步STRM文件",
+                        misfire_grace_time=3600,
+                    )
+                    logger.info(f"已添加全量同步STRM文件定时任务: {self._cron_full_sync_strm}")
+                except Exception as e:
+                    logger.error(f"添加全量同步STRM文件定时任务失败: {e}")
+            
+            if self._clear_recyclebin_enabled or self._clear_receive_path_enabled:
+                try:
+                    self._scheduler.add_job(
+                        self.main_cleaner,
+                        CronTrigger.from_crontab(self._cron_clear),
+                        id="clear_115_files",
+                        name="定期清理115文件",
+                        misfire_grace_time=3600
+                    )
+                    logger.info(f"已添加定期清理115文件定时任务: {self._cron_clear}")
+                except Exception as e:
+                    logger.error(f"添加定期清理115文件定时任务失败: {e}")
+
+            # 启动生活事件监控线程
+            if self._monitor_life_enabled:
+                self.debug_log("Starting monitor life events thread...")
+                self.monitor_stop_event.clear()
+                self.monitor_life_thread = threading.Thread(target=self.monitor_life_strm_files, daemon=True)
+                self.monitor_life_thread.start()
+            
+            if self._scheduler.get_jobs():
+                self._scheduler.print_jobs()
+                self._scheduler.start()
+        else:
+            self.debug_log("P1115StrmHelper plugin is disabled.")
+            self.stop_service() # 确保在禁用时停止所有服务，包括可能存在的MediaWarp
+
+        # 根据配置启动 MediaWarp 服务 (在主插件服务启动之后)
+        if self._mediawarp_enabled:
+            logger.info("[MediaWarp] 配置为启用，尝试启动 MediaWarp 服务...")
+            self._run_mediawarp_service() # 调用实际的启动方法
+        else:
+            logger.info("[MediaWarp] 配置为禁用，确保 MediaWarp 服务已停止。")
+            self._stop_mediawarp_service() # 调用实际的停止方法
+
+
+    # --- MediaWarp Integration Methods START ---
+
+    def _get_mediawarp_download_url(self) -> str:
+        """
+        获取 MediaWarp 二进制文件的下载链接。
+        """
+        base_url = "https://github.com/DDS-Derek/MediaWarp/releases/download/v{version}/MediaWarp_{version}_linux_{arch}.tar.gz"
+        machine = platform.machine().lower()
+        arch = "arm64" if machine in ["arm64", "aarch64"] else "amd64"
+        return base_url.format(arch=arch, version=self.__MEDIAWARP_DEFAULT_VERSION)
+
+    def _download_and_extract_mediawarp_binary(self) -> bool:
+        """
+        下载并解压 MediaWarp 二进制文件及其相关文件（如示例配置、static目录）。
+        """
+        if not all([
+            self._mediawarp_base_data_path,
+            self.__mediawarp_binary_path,
+            self.__mediawarp_config_dir_path,
+            self.__mediawarp_config_yaml_path,
+            self.__mediawarp_version_file_path,
+            self.__mediawarp_logs_dir_path 
+        ]):
+            logger.error("[MediaWarp] 内部路径未正确初始化，无法下载。")
             return False
 
-        # 初始化客户端
-        self._client = None  # 确保 _client 默认为 None
-        if self._cookies:
-            try:
-                # 尝试使用已配置的Cookies创建客户端
-                self._client = P115Client(self._cookies)
-                logger.info("已尝试使用配置中的Cookies初始化115客户端。")
-            except Exception as e:
-                logger.error(f"使用配置中的Cookies创建115客户端失败: {e}。")
-                self._client = None # 创建失败时确保 _client 为 None
-                # Call the handler if enabled and config is loaded enough
-                if hasattr(self, '_cookie_error_notify_enabled') and self._cookie_error_notify_enabled:
-                    logger.info("客户端初始化失败，触发Cookie失效检查和通知流程（来自init_plugin）。")
-                    self._check_cookie_and_notify_if_invalid(context_message="插件启动时115客户端初始化")
+        url = self._get_mediawarp_download_url()
+        temp_dir_obj = tempfile.TemporaryDirectory(prefix="mediawarp_dl_")
+        temp_dir = Path(temp_dir_obj.name)
+        temp_file = temp_dir / "MediaWarp.tar.gz"
+
+        try:
+            self._mediawarp_base_data_path.mkdir(parents=True, exist_ok=True)
+            self.__mediawarp_config_dir_path.mkdir(parents=True, exist_ok=True)
+            self.__mediawarp_logs_dir_path.mkdir(parents=True, exist_ok=True)
+
+            logger.info(f"[MediaWarp] 正在下载: {url}")
+            response = requests.get(url, stream=True, timeout=300)
+            response.raise_for_status()
+
+            with open(temp_file, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            logger.info(f"[MediaWarp] 下载完成: {temp_file}")
+
+            logger.info("[MediaWarp] 正在解压文件...")
+            with tarfile.open(temp_file, "r:gz") as tar:
+                mediawarp_binary_member = next((m for m in tar.getmembers() if m.name.endswith("MediaWarp") and m.isfile()), None)
+                if mediawarp_binary_member:
+                    tar.extract(member=mediawarp_binary_member, path=temp_dir)
+                    extracted_binary_path = temp_dir / mediawarp_binary_member.name
+                    extracted_binary_path.chmod(0o755)
+                    shutil.move(str(extracted_binary_path), str(self.__mediawarp_binary_path))
+                    logger.info(f"[MediaWarp] 二进制文件已更新到 {self.__mediawarp_binary_path}")
                 else:
-                    logger.info("Cookie失效通知未启用或配置未完全加载，跳过初始化时的通知。")
+                    logger.error("[MediaWarp] 在压缩包中未找到 MediaWarp 二进制文件。")
+                    temp_dir_obj.cleanup()
+                    return False
+
+                if not self.__mediawarp_config_yaml_path.exists():
+                    config_example_member = next((m for m in tar.getmembers() if m.name.endswith("config.yaml.example") and m.isfile()), None)
+                    if config_example_member:
+                        tar.extract(member=config_example_member, path=temp_dir)
+                        extracted_config_example_path = temp_dir / config_example_member.name
+                        shutil.copy2(extracted_config_example_path, self.__mediawarp_config_yaml_path)
+                        logger.info(f"[MediaWarp] 示例配置文件已保存到 {self.__mediawarp_config_yaml_path}")
+                    else:
+                        logger.warning("[MediaWarp] 压缩包中未找到 config.yaml.example。")
+                
+                static_target_path = self.__mediawarp_config_dir_path / "static"
+                if static_target_path.exists() and static_target_path.is_dir():
+                    shutil.rmtree(static_target_path)
+                
+                static_members_to_extract = [m for m in tar.getmembers() if m.name.startswith("static/")]
+                if static_members_to_extract:
+                    # Extract "static/*" members directly into the config directory,
+                    # which will create "config/static/..."
+                    tar.extractall(path=self.__mediawarp_config_dir_path, members=[m for m in static_members_to_extract if m.isfile() or m.isdir()])
+                    logger.info(f"[MediaWarp] static 目录内容已尝试提取到 {self.__mediawarp_config_dir_path}")
+                else:
+                    logger.info("[MediaWarp] 压缩包中未找到 static/ 目录内容。")
+
+            with open(self.__mediawarp_version_file_path, "w", encoding="utf-8") as f:
+                f.write(self.__MEDIAWARP_DEFAULT_VERSION)
+            logger.info(f"[MediaWarp] 安装/更新完成！MediaWarp 版本 {self.__MEDIAWARP_DEFAULT_VERSION} 已记录。")
+            return True
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[MediaWarp] 下载失败: {e}")
+            return False
+        except tarfile.TarError as e:
+            logger.error(f"[MediaWarp] 解压失败: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"[MediaWarp] 下载或解压过程中发生未知错误: {e} ({type(e).__name__})")
+            return False
+        finally:
+            temp_dir_obj.cleanup()
+
+    def _ensure_mediawarp_binary_and_config(self) -> bool:
+        """
+        确保 MediaWarp 二进制文件和基础配置文件存在且版本正确。
+        如果需要，会自动下载和解压。
+        """
+        if not all([
+            self.__mediawarp_binary_path, 
+            self.__mediawarp_config_yaml_path, 
+            self.__mediawarp_version_file_path
+        ]):
+            logger.error("[MediaWarp] 内部路径未正确初始化，无法确保二进制文件。")
+            return False
+
+        needs_download = False
+        if not self.__mediawarp_binary_path.exists():
+            logger.info(f"[MediaWarp] 二进制文件不存在于 {self.__mediawarp_binary_path}。")
+            needs_download = True
         else:
-            logger.info("未找到115 Cookies配置，客户端未初始化。请通过插件配置页面登录以获取Cookies。")
-
-        # 停止现有任务
-        self.stop_service()
-
-        if self._enabled and self._once_full_sync_strm:
-            self._scheduler = BackgroundScheduler(timezone=settings.TZ)
-            self._scheduler.add_job(
-                func=self.full_sync_strm_files,
-                trigger="date",
-                run_date=datetime.now(tz=pytz.timezone(settings.TZ))
-                + timedelta(seconds=3),
-                name="115网盘助手立刻全量同步",
-            )
-            self._once_full_sync_strm = False
-            self.__update_config()
-            if self._scheduler.get_jobs():
-                self._scheduler.print_jobs()
-                self._scheduler.start()
-
-        if self._enabled and self._share_strm_enabled:
-            self._scheduler = BackgroundScheduler(timezone=settings.TZ)
-            self._scheduler.add_job(
-                func=self.share_strm_files,
-                trigger="date",
-                run_date=datetime.now(tz=pytz.timezone(settings.TZ))
-                + timedelta(seconds=3),
-                name="115网盘助手分享生成STRM",
-            )
-            self._share_strm_enabled = False
-            self.__update_config()
-            if self._scheduler.get_jobs():
-                self._scheduler.print_jobs()
-                self._scheduler.start()
-
-        if self._enabled and (
-            (self._monitor_life_enabled and self._monitor_life_paths)
-            or (self._pan_transfer_enabled and self._pan_transfer_paths)
-        ):
-            self.monitor_stop_event.clear()
-            if self.monitor_life_thread:
-                if not self.monitor_life_thread.is_alive():
-                    self.monitor_life_thread = threading.Thread(
-                        target=self.monitor_life_strm_files, daemon=True
-                    )
-                    self.monitor_life_thread.start()
+            if self.__mediawarp_version_file_path.exists():
+                try:
+                    with open(self.__mediawarp_version_file_path, "r", encoding="utf-8") as f:
+                        installed_version = f.read().strip()
+                    if installed_version != self.__MEDIAWARP_DEFAULT_VERSION:
+                        logger.info(f"[MediaWarp] 版本不匹配 (已安装: {installed_version}, 需要: {self.__MEDIAWARP_DEFAULT_VERSION})。")
+                        needs_download = True
+                    else:
+                        logger.info(f"[MediaWarp] 版本已是最新 ({installed_version})。")
+                except Exception as e:
+                    logger.warning(f"[MediaWarp] 读取版本文件失败: {e}。假定需要更新。")
+                    needs_download = True
             else:
-                self.monitor_life_thread = threading.Thread(
-                    target=self.monitor_life_strm_files, daemon=True
-                )
-                self.monitor_life_thread.start()
+                logger.info(f"[MediaWarp] 版本文件 {self.__mediawarp_version_file_path} 不存在。")
+                needs_download = True
+        
+        if needs_download:
+            logger.info("[MediaWarp] 准备下载/更新 MediaWarp 二进制文件...")
+            if not self._download_and_extract_mediawarp_binary():
+                logger.error("[MediaWarp] 下载/更新 MediaWarp 二进制文件失败。")
+                return False
+            logger.info("[MediaWarp] 下载/更新 MediaWarp 二进制文件过程完成。")
+
+        if not self.__mediawarp_binary_path.exists():
+            logger.error(f"[MediaWarp] 二进制文件仍不存在于 {self.__mediawarp_binary_path}，即使在尝试下载后。")
+            return False
+        
+        if not self.__mediawarp_config_yaml_path.exists():
+            logger.error(f"[MediaWarp] 配置文件不存在于 {self.__mediawarp_config_yaml_path}。MediaWarp可能无法启动。")
+            return False
+
+        logger.info(f"[MediaWarp] 二进制文件和配置文件检查通过。 Binary: {self.__mediawarp_binary_path}, Config: {self.__mediawarp_config_yaml_path}")
+        return True
+
+    def _modify_mediawarp_config(self) -> bool:
+        """
+        根据 P1115StrmHelper 的配置修改 MediaWarp 的 config.yaml 文件。
+        """
+        if not self.__mediawarp_config_yaml_path or not self.__mediawarp_config_dir_path:
+            logger.error("[MediaWarp] 配置文件路径未初始化，无法修改配置。")
+            return False
+        if not self.__mediawarp_config_yaml_path.exists():
+            logger.error(f"[MediaWarp] 配置文件 {self.__mediawarp_config_yaml_path} 不存在，无法修改。")
+            return False
+
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        yaml.indent(mapping=2, sequence=4, offset=2)
+
+        class MyRepresenter(RoundTripRepresenter):
+            pass
+        MyRepresenter.add_representer(bool, lambda self, data: self.represent_scalar(u'tag:yaml.org,2002:bool', u'True' if data else u'False'))
+        yaml.Representer = MyRepresenter
+        
+        try:
+            with open(self.__mediawarp_config_yaml_path, "r", encoding="utf-8") as file:
+                config_data = yaml.load(file)
+                if not isinstance(config_data, Mapping):
+                    logger.warning(f"[MediaWarp] 配置文件 {self.__mediawarp_config_yaml_path} 内容格式不正确或为空。将创建新的配置结构。")
+                    config_data = {} 
+        except Exception as e:
+            logger.error(f"[MediaWarp] 读取或解析配置文件 {self.__mediawarp_config_yaml_path} 失败: {e}。将创建新的配置结构。")
+            config_data = {}
+
+        # Define default structure for sections if they don't exist
+        config_data.setdefault("Logger", {}).setdefault("AccessLogger", {})
+        config_data["Logger"].setdefault("ErrorLogger", {})
+        config_data.setdefault("MediaServer", {})
+        config_data.setdefault("Web", {})
+        config_data.setdefault("HTTPStrm", {})
+        config_data.setdefault("Subtitle", {})
+
+        modifications = {
+            "Port": str(self._mediawarp_port) if self._mediawarp_port else '18699',
+            "Logger.AccessLogger.File": True,
+            "Logger.AccessLogger.Console": False,
+            "Logger.AccessLogger.Filename": "./logs/access.log", 
+            "Logger.ErrorLogger.File": True,
+            "Logger.ErrorLogger.Console": False,
+            "Logger.ErrorLogger.Filename": "./logs/error.log",
+        }
+
+        if self._mediawarp_emby_type and self._mediawarp_emby_host and self._mediawarp_emby_apikey:
+            modifications["MediaServer.Type"] = "Jellyfin" if self._mediawarp_emby_type == "jellyfin" else "Emby"
+            modifications["MediaServer.ADDR"] = self._mediawarp_emby_host
+            modifications["MediaServer.AUTH"] = self._mediawarp_emby_apikey
+        else:
+            modifications["MediaServer.Type"] = "Emby" 
+            modifications["MediaServer.ADDR"] = ""
+            modifications["MediaServer.AUTH"] = ""
+            logger.debug("[MediaWarp] 未配置有效的媒体服务器信息供 MediaWarp 使用。")
+        
+        modifications["Web.Index"] = (self.__mediawarp_config_dir_path / "static" / "index.html").exists()
+        modifications["Web.Crx"] = self._mediawarp_crx
+        modifications["Web.ActorPlus"] = self._mediawarp_actor_plus
+        modifications["Web.FanartShow"] = self._mediawarp_fanart_show
+        modifications["Web.ExternalPlayerUrl"] = self._mediawarp_external_player_url
+        modifications["Web.Danmaku"] = self._mediawarp_danmaku
+        modifications["Web.VideoTogether"] = self._mediawarp_video_together
+        
+        modifications["HTTPStrm.Enable"] = True
+        modifications["HTTPStrm.PrefixList"] = self._mediawarp_media_strm_path.splitlines() if self._mediawarp_media_strm_path else []
+        
+        modifications["Subtitle.SRT2ASS"] = self._mediawarp_srt2ass
+        
+        for key_path, value in modifications.items():
+            keys = key_path.split(".")
+            current_level = config_data
+            for i, key in enumerate(keys):
+                if i == len(keys) - 1:
+                    current_level[key] = value
+                else:
+                    current_level = current_level.setdefault(key, {})
+        
+        try:
+            with open(self.__mediawarp_config_yaml_path, "w", encoding="utf-8") as file:
+                yaml.dump(config_data, file)
+            logger.info(f"[MediaWarp] 配置文件 {self.__mediawarp_config_yaml_path} 已更新。")
+            return True
+        except Exception as e:
+            logger.error(f"[MediaWarp] 写入配置文件 {self.__mediawarp_config_yaml_path} 失败: {e}")
+            return False
+
+    def _run_mediawarp_service(self):
+        """
+        启动 MediaWarp 服务。
+        """
+        if not self._mediawarp_enabled:
+            logger.info("[MediaWarp] MediaWarp 未启用，跳过启动。")
+            return
+
+        if not self._ensure_mediawarp_binary_and_config():
+            logger.error("[MediaWarp] 无法确保二进制文件和配置，启动中止。")
+            return False
+
+        if not self._modify_mediawarp_config():
+            logger.error("[MediaWarp] 修改配置文件失败，启动中止。")
+            return False
+
+        if self._mediawarp_process and self._mediawarp_process.is_running():
+            logger.info(f"[MediaWarp] 服务已在运行 (PID: {self._mediawarp_process.pid})。")
+            return True
+
+        if not self.__mediawarp_binary_path or not self.__mediawarp_config_dir_path or not self.__mediawarp_logs_dir_path:
+            logger.error("[MediaWarp] 必要的路径未设置，无法启动服务。")
+            return False
+
+        try:
+            cmd = [str(self.__mediawarp_binary_path), "-config", str(self.__mediawarp_config_yaml_path)]
+            env = os.environ.copy()
+            env["GIN_MODE"] = "release"
+            
+            # 定义日志文件路径
+            stdout_log_path = self.__mediawarp_logs_dir_path / "mediawarp_stdout.log"
+            stderr_log_path = self.__mediawarp_logs_dir_path / "mediawarp_stderr.log"
+
+            # 以追加模式打开日志文件
+            # 注意：os模块需要在使用前导入。如果 P1115StrmHelper 类或其所在模块尚未导入 os,
+            # 需要确保 import os 在文件顶部。假设它已经存在。
+            stdout_log = open(stdout_log_path, "ab")
+            stderr_log = open(stderr_log_path, "ab")
+
+            logger.info(f"[MediaWarp] 准备启动 MediaWarp 服务: {' '.join(cmd)}")
+            logger.info(f"[MediaWarp] STDOUT 将重定向到: {stdout_log_path}")
+            logger.info(f"[MediaWarp] STDERR 将重定向到: {stderr_log_path}")
+
+            self._mediawarp_process = psutil.Popen(
+                cmd,
+                env=env,
+                cwd=str(self._mediawarp_base_data_path), # 在mediawarp_files目录下运行
+                stdout=stdout_log,
+                stderr=stderr_log,
+                # close_fds=True on POSIX is generally recommended for Popen if not passing specific fds.
+                # However, on Windows, it can cause issues if True and std handles are not properly managed or redirected.
+                # Given we are redirecting stdout/stderr to files, it should be safe.
+                # psutil.Popen's behavior might differ slightly from subprocess.Popen here.
+                # Let's assume 'os' is imported at the top of the file.
+            )
+            logger.info(f"[MediaWarp] 服务已启动 (PID: {self._mediawarp_process.pid})。")
+            
+            time.sleep(2) # Give the process a moment to start or fail.
+            if not self._mediawarp_process.is_running() or self._mediawarp_process.status() == psutil.STATUS_ZOMBIE:
+                logger.error(f"[MediaWarp] 服务启动后立即退出或变为僵尸进程。请检查 {stderr_log_path} 获取更多信息。")
+                self._mediawarp_process = None
+                stdout_log.close()
+                stderr_log.close()
+                return False
+            
+            return True
+        except Exception as e:
+            logger.error(f"[MediaWarp] 启动服务失败: {e}", exc_info=True)
+            if hasattr(self, '_mediawarp_process') and self._mediawarp_process:
+                self._mediawarp_process = None
+            if 'stdout_log' in locals() and stdout_log and not stdout_log.closed:
+                stdout_log.close()
+            if 'stderr_log' in locals() and stderr_log and not stderr_log.closed:
+                stderr_log.close()
+            return False
+
+    def _stop_mediawarp_service(self):
+        """
+        停止 MediaWarp 服务。
+        """
+        if self._mediawarp_process and self._mediawarp_process.is_running():
+            logger.info(f"[MediaWarp] 正在停止 MediaWarp 服务 (PID: {self._mediawarp_process.pid})...")
+            try:
+                # 先尝试友好终止
+                self._mediawarp_process.terminate()
+                try:
+                    self._mediawarp_process.wait(timeout=5) # 等待5秒
+                    logger.info(f"[MediaWarp] 服务 (PID: {self._mediawarp_process.pid}) 已终止。")
+                except psutil.TimeoutExpired:
+                    logger.warning(f"[MediaWarp] 服务 (PID: {self._mediawarp_process.pid}) 在5秒内未终止，强制结束。")
+                    self._mediawarp_process.kill() # 强制结束
+                    self._mediawarp_process.wait(timeout=2) # 等待强制结束
+                    logger.info(f"[MediaWarp] 服务 (PID: {self._mediawarp_process.pid}) 已强制结束。")
+
+            except psutil.NoSuchProcess:
+                logger.info(f"[MediaWarp] 尝试停止服务时，进程 (PID: {self._mediawarp_process.pid if self._mediawarp_process else 'N/A'}) 已不存在。")
+            except Exception as e:
+                logger.error(f"[MediaWarp] 停止服务时发生未知错误: {e}", exc_info=True)
+            finally:
+                # 确保在所有情况下都清理进程对象
+                # 关闭可能由Popen打开的日志文件句柄 (尽管Popen应该自己管理)
+                # 检查 self._mediawarp_process 是否仍然存在并且不是None
+                if self._mediawarp_process: 
+                    process_obj = self._mediawarp_process # temp var for safety
+                    self._mediawarp_process = None # Clear immediately to prevent re-entry issues
+                    try:
+                        if hasattr(process_obj, 'stdout') and process_obj.stdout and hasattr(process_obj.stdout, 'close') and not process_obj.stdout.closed:
+                            process_obj.stdout.close()
+                        if hasattr(process_obj, 'stderr') and process_obj.stderr and hasattr(process_obj.stderr, 'close') and not process_obj.stderr.closed:
+                            process_obj.stderr.close()
+                    except Exception as e_close:
+                        logger.error(f"[MediaWarp] 关闭子进程的std句柄时出错: {e_close}")
+        else:
+            logger.info("[MediaWarp] 服务未运行或进程对象不存在。")
+
+    # --- MediaWarp Integration Methods END ---
 
     def get_state(self) -> bool:
         return self._enabled
@@ -1099,6 +1585,21 @@ class P1115StrmHelper(_PluginBase):
             "picgo_enabled": self._picgo_enabled,
             "picgo_api_key": self._picgo_api_key or "",
             "picgo_upload_url": self._picgo_upload_url or "https://www.picgo.net/api/1/upload",
+            
+            # MediaWarp 配置项
+            "mediawarp_enabled": self._mediawarp_enabled,
+            "mediawarp_port": self._mediawarp_port or '18699',
+            "mediawarp_media_strm_path": self._mediawarp_media_strm_path or "",
+            "mediawarp_mediaservers": self._mediawarp_mediaserver_name or None, # 前端使用 mediawarp_mediaservers 作为单选的 v-model
+            "mediawarp_crx": self._mediawarp_crx,
+            "mediawarp_actor_plus": self._mediawarp_actor_plus,
+            "mediawarp_fanart_show": self._mediawarp_fanart_show,
+            "mediawarp_external_player_url": self._mediawarp_external_player_url,
+            "mediawarp_danmaku": self._mediawarp_danmaku,
+            "mediawarp_video_together": self._mediawarp_video_together,
+            "mediawarp_srt2ass": self._mediawarp_srt2ass,
+            "mediawarp_running": bool(self._mediawarp_process and self._mediawarp_process.is_running()),
+
             # 获取可用的媒体服务器配置
             "mediaservers": [
                                         {"title": config.name, "value": config.name}
@@ -1153,6 +1654,19 @@ class P1115StrmHelper(_PluginBase):
             self._picgo_enabled = data.get("picgo_enabled", False)
             self._picgo_api_key = data.get("picgo_api_key", "")
             self._picgo_upload_url = data.get("picgo_upload_url", "https://www.picgo.net/api/1/upload")
+            # MediaWarp 配置项加载
+            self._mediawarp_enabled = data.get("mediawarp_enabled", False)
+            self._mediawarp_port = data.get("mediawarp_port", '18699')
+            self._mediawarp_media_strm_path = data.get("mediawarp_media_strm_path", "")
+            # mediawarp_mediaservers from frontend is the name of the selected server for MediaWarp
+            self._mediawarp_mediaserver_name = data.get("mediawarp_mediaservers") 
+            self._mediawarp_crx = data.get("mediawarp_crx", False)
+            self._mediawarp_actor_plus = data.get("mediawarp_actor_plus", False)
+            self._mediawarp_fanart_show = data.get("mediawarp_fanart_show", False)
+            self._mediawarp_external_player_url = data.get("mediawarp_external_player_url", False)
+            self._mediawarp_danmaku = data.get("mediawarp_danmaku", False)
+            self._mediawarp_video_together = data.get("mediawarp_video_together", False)
+            self._mediawarp_srt2ass = data.get("mediawarp_srt2ass", False)
             
             # 持久化存储配置
             self.__update_config()
@@ -1660,6 +2174,21 @@ class P1115StrmHelper(_PluginBase):
                 "picgo_enabled": self._picgo_enabled,
                 "picgo_api_key": self._picgo_api_key or "",
                 "picgo_upload_url": self._picgo_upload_url or "https://www.picgo.net/api/1/upload",
+                
+                # MediaWarp 配置项
+                "mediawarp_enabled": self._mediawarp_enabled,
+                "mediawarp_port": self._mediawarp_port or '18699',
+                "mediawarp_media_strm_path": self._mediawarp_media_strm_path or "",
+                "mediawarp_mediaservers": self._mediawarp_mediaserver_name or None, # 前端使用 mediawarp_mediaservers 作为单选的 v-model
+                "mediawarp_crx": self._mediawarp_crx,
+                "mediawarp_actor_plus": self._mediawarp_actor_plus,
+                "mediawarp_fanart_show": self._mediawarp_fanart_show,
+                "mediawarp_external_player_url": self._mediawarp_external_player_url,
+                "mediawarp_danmaku": self._mediawarp_danmaku,
+                "mediawarp_video_together": self._mediawarp_video_together,
+                "mediawarp_srt2ass": self._mediawarp_srt2ass,
+                "mediawarp_running": bool(self._mediawarp_process and self._mediawarp_process.is_running()),
+
                 # 获取可用的媒体服务器配置
                 "mediaservers": [
                                         {"title": config.name, "value": config.name}
@@ -2473,7 +3002,8 @@ class P1115StrmHelper(_PluginBase):
                         logger.info(
                             f"【监控生活事件】刷新媒体服务器目录替换: {moviepilot_path} --> {mediaserver_path}"
                         )
-                        logger.info(f"【监控生活事件】刷新媒体服务器目录: {file_path}")
+                        logger.info(
+                            f"【监控生活事件】刷新媒体服务器目录: {file_path}")
                 items = [
                     RefreshMediaItem(
                         title=None,
@@ -2915,6 +3445,11 @@ class P1115StrmHelper(_PluginBase):
             # Let polling threads manage their lifecycle or be stopped by a more global shutdown event if available.
             # if hasattr(self, '_qr_polling_stop_event') and self._qr_polling_stop_event: # QR polling stop
             #     self._qr_polling_stop_event.set() # REMOVED THIS LINE
+            
+            # 确保 MediaWarp 服务也停止
+            self._stop_mediawarp_service()
+            logger.info("[P1115StrmHelper] 所有服务已尝试停止。")
+
         except Exception as e:
             print(str(e))
 
