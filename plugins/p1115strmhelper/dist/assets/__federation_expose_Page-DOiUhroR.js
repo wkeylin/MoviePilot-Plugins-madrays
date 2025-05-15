@@ -49,11 +49,12 @@ const _hoisted_21 = { class: "d-flex" };
 const _hoisted_22 = { class: "text-body-2" };
 const _hoisted_23 = { class: "d-flex" };
 const _hoisted_24 = { class: "text-body-2" };
-const _hoisted_25 = {
+const _hoisted_25 = { class: "d-flex align-center" };
+const _hoisted_26 = {
   key: 0,
   class: "d-flex justify-center my-3"
 };
-const _hoisted_26 = { key: 1 };
+const _hoisted_27 = { key: 1 };
 
 const {ref,reactive,computed,onMounted,watch} = await importShared('vue');
 
@@ -698,10 +699,10 @@ return (_ctx, _cache) => {
   const _component_v_col = _resolveComponent("v-col");
   const _component_v_btn = _resolveComponent("v-btn");
   const _component_v_row = _resolveComponent("v-row");
-  const _component_v_spacer = _resolveComponent("v-spacer");
   const _component_v_card_actions = _resolveComponent("v-card-actions");
   const _component_v_text_field = _resolveComponent("v-text-field");
   const _component_v_switch = _resolveComponent("v-switch");
+  const _component_v_spacer = _resolveComponent("v-spacer");
   const _component_v_dialog = _resolveComponent("v-dialog");
   const _component_v_progress_circular = _resolveComponent("v-progress-circular");
 
@@ -1774,7 +1775,7 @@ return (_ctx, _cache) => {
           }),
           _createVNode(_component_v_divider),
           _createVNode(_component_v_card_actions, {
-            class: "px-2 py-1 sticky-actions",
+            class: "px-2 py-1 sticky-actions d-flex justify-space-between align-center",
             style: {"flex-shrink":"0"}
           }, {
             default: _withCtx(() => [
@@ -1792,59 +1793,70 @@ return (_ctx, _cache) => {
                 ])),
                 _: 1
               }, 8, ["disabled", "loading"]),
-              _createVNode(_component_v_spacer),
-              _createVNode(_component_v_btn, {
-                color: "warning",
-                "prepend-icon": "mdi-sync",
-                disabled: !status.enabled || !status.has_client || actionLoading.value,
-                loading: syncLoading.value,
-                onClick: triggerFullSync,
-                variant: "text",
-                size: "small"
-              }, {
-                default: _withCtx(() => _cache[60] || (_cache[60] = [
-                  _createTextVNode(" 全量同步 ")
-                ])),
-                _: 1
-              }, 8, ["disabled", "loading"]),
-              _createVNode(_component_v_btn, {
-                color: "info",
-                "prepend-icon": "mdi-share-variant",
-                disabled: !status.enabled || !status.has_client || actionLoading.value,
-                loading: shareSyncLoading.value,
-                onClick: openShareDialog,
-                variant: "text",
-                size: "small"
-              }, {
-                default: _withCtx(() => _cache[61] || (_cache[61] = [
-                  _createTextVNode(" 分享同步 ")
-                ])),
-                _: 1
-              }, 8, ["disabled", "loading"]),
-              _createVNode(_component_v_btn, {
-                color: "primary",
-                onClick: _cache[2] || (_cache[2] = $event => (emit('switch'))),
-                "prepend-icon": "mdi-cog",
-                variant: "text",
-                size: "small"
-              }, {
-                default: _withCtx(() => _cache[62] || (_cache[62] = [
-                  _createTextVNode("配置")
-                ])),
-                _: 1
-              }),
-              _createVNode(_component_v_btn, {
-                color: "grey",
-                onClick: _cache[3] || (_cache[3] = $event => (emit('close'))),
-                "prepend-icon": "mdi-close",
-                variant: "tonal",
-                size: "small"
-              }, {
-                default: _withCtx(() => _cache[63] || (_cache[63] = [
-                  _createTextVNode("关闭")
-                ])),
-                _: 1
-              })
+              _createElementVNode("div", _hoisted_25, [
+                _createVNode(_component_v_btn, {
+                  color: "warning",
+                  "prepend-icon": "mdi-sync",
+                  disabled: !status.enabled || !status.has_client || actionLoading.value,
+                  loading: syncLoading.value,
+                  onClick: triggerFullSync,
+                  variant: "text",
+                  size: "small",
+                  class: "ml-1"
+                }, {
+                  default: _withCtx(() => _cache[60] || (_cache[60] = [
+                    _createTextVNode(" 全量同步 ")
+                  ])),
+                  _: 1
+                }, 8, ["disabled", "loading"]),
+                _createVNode(_component_v_btn, {
+                  color: "info",
+                  "prepend-icon": "mdi-share-variant",
+                  disabled: !status.enabled || !status.has_client || actionLoading.value,
+                  loading: shareSyncLoading.value,
+                  onClick: openShareDialog,
+                  variant: "text",
+                  size: "small",
+                  class: "ml-1"
+                }, {
+                  default: _withCtx(() => _cache[61] || (_cache[61] = [
+                    _createTextVNode(" 分享同步 ")
+                  ])),
+                  _: 1
+                }, 8, ["disabled", "loading"]),
+                _createVNode(_component_v_btn, {
+                  color: "primary",
+                  onClick: _cache[2] || (_cache[2] = $event => (emit('switch'))),
+                  "prepend-icon": "mdi-cog",
+                  variant: "text",
+                  size: "small",
+                  class: "ml-1"
+                }, {
+                  default: _withCtx(() => _cache[62] || (_cache[62] = [
+                    _createTextVNode("配置")
+                  ])),
+                  _: 1
+                }),
+                _createVNode(_component_v_btn, {
+                  color: "error",
+                  onClick: _cache[3] || (_cache[3] = $event => (emit('close'))),
+                  variant: "flat",
+                  size: "small",
+                  class: "ml-1 custom-close-btn",
+                  "aria-label": "关闭",
+                  style: {"min-width":"auto !important","padding":"0 10px !important","height":"28px !important","line-height":"28px !important"}
+                }, {
+                  default: _withCtx(() => [
+                    _createVNode(_component_v_icon, { size: "small" }, {
+                      default: _withCtx(() => _cache[63] || (_cache[63] = [
+                        _createTextVNode("mdi-close")
+                      ])),
+                      _: 1
+                    })
+                  ]),
+                  _: 1
+                })
+              ])
             ]),
             _: 1
           })
@@ -2081,13 +2093,13 @@ return (_ctx, _cache) => {
             _createVNode(_component_v_card_text, { class: "px-3 py-2" }, {
               default: _withCtx(() => [
                 (dirDialog.loading)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_25, [
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_26, [
                       _createVNode(_component_v_progress_circular, {
                         indeterminate: "",
                         color: "primary"
                       })
                     ]))
-                  : (_openBlock(), _createElementBlock("div", _hoisted_26, [
+                  : (_openBlock(), _createElementBlock("div", _hoisted_27, [
                       _createVNode(_component_v_text_field, {
                         modelValue: dirDialog.currentPath,
                         "onUpdate:modelValue": _cache[13] || (_cache[13] = $event => ((dirDialog.currentPath) = $event)),
@@ -2239,6 +2251,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-c88bef71"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-46f3b2f3"]]);
 
 export { Page as default };

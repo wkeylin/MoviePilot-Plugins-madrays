@@ -2217,8 +2217,7 @@ return (_ctx, _cache) => {
                                                     "onUpdate:modelValue": _cache[29] || (_cache[29] = $event => ((config.cookie_error_notify_enabled) = $event)),
                                                     label: "Cookie失效时发送通知",
                                                     color: "warning",
-                                                    density: "compact",
-                                                    inset: ""
+                                                    density: "compact"
                                                   }, null, 8, ["modelValue"])
                                                 ]),
                                                 _: 1
@@ -2283,8 +2282,7 @@ return (_ctx, _cache) => {
                                                     "onUpdate:modelValue": _cache[31] || (_cache[31] = $event => ((config.picgo_enabled) = $event)),
                                                     label: "启用 PicGo.net 上传二维码 (用于Cookie失效通知)",
                                                     color: "success",
-                                                    density: "compact",
-                                                    inset: ""
+                                                    density: "compact"
                                                   }, null, 8, ["modelValue"])
                                                 ]),
                                                 _: 1
@@ -2399,9 +2397,8 @@ return (_ctx, _cache) => {
                                                     modelValue: config.mediawarp_enabled,
                                                     "onUpdate:modelValue": _cache[34] || (_cache[34] = $event => ((config.mediawarp_enabled) = $event)),
                                                     label: "启用插件",
-                                                    color: "primary",
+                                                    color: "success",
                                                     density: "compact",
-                                                    inset: "",
                                                     disabled: loading.value
                                                   }, null, 8, ["modelValue", "disabled"])
                                                 ]),
@@ -2600,9 +2597,8 @@ return (_ctx, _cache) => {
                                                     label: "CRX美化",
                                                     hint: "crx 美化",
                                                     "persistent-hint": "",
-                                                    color: "primary",
+                                                    color: "info",
                                                     density: "compact",
-                                                    inset: "",
                                                     disabled: !config.mediawarp_enabled || loading.value
                                                   }, null, 8, ["modelValue", "disabled"])
                                                 ]),
@@ -2619,9 +2615,8 @@ return (_ctx, _cache) => {
                                                     label: "头像过滤",
                                                     hint: "过滤没有头像的演员和制作人员",
                                                     "persistent-hint": "",
-                                                    color: "primary",
+                                                    color: "success",
                                                     density: "compact",
-                                                    inset: "",
                                                     disabled: !config.mediawarp_enabled || loading.value
                                                   }, null, 8, ["modelValue", "disabled"])
                                                 ]),
@@ -2638,9 +2633,8 @@ return (_ctx, _cache) => {
                                                     label: "显示同人图",
                                                     hint: "显示同人图（fanart 图）",
                                                     "persistent-hint": "",
-                                                    color: "primary",
+                                                    color: "info",
                                                     density: "compact",
-                                                    inset: "",
                                                     disabled: !config.mediawarp_enabled || loading.value
                                                   }, null, 8, ["modelValue", "disabled"])
                                                 ]),
@@ -2662,9 +2656,8 @@ return (_ctx, _cache) => {
                                                     label: "外置播放器",
                                                     hint: "是否开启外置播放器（仅 Emby）",
                                                     "persistent-hint": "",
-                                                    color: "primary",
+                                                    color: "warning",
                                                     density: "compact",
-                                                    inset: "",
                                                     disabled: !config.mediawarp_enabled || loading.value
                                                   }, null, 8, ["modelValue", "disabled"])
                                                 ]),
@@ -2681,9 +2674,8 @@ return (_ctx, _cache) => {
                                                     label: "Web弹幕",
                                                     hint: "Web 弹幕",
                                                     "persistent-hint": "",
-                                                    color: "primary",
+                                                    color: "success",
                                                     density: "compact",
-                                                    inset: "",
                                                     disabled: !config.mediawarp_enabled || loading.value
                                                   }, null, 8, ["modelValue", "disabled"])
                                                 ]),
@@ -2700,9 +2692,8 @@ return (_ctx, _cache) => {
                                                     label: "共同观影",
                                                     hint: "共同观影",
                                                     "persistent-hint": "",
-                                                    color: "primary",
+                                                    color: "info",
                                                     density: "compact",
-                                                    inset: "",
                                                     disabled: !config.mediawarp_enabled || loading.value
                                                   }, null, 8, ["modelValue", "disabled"])
                                                 ]),
@@ -2750,9 +2741,8 @@ return (_ctx, _cache) => {
                                                     label: "SRT转ASS",
                                                     hint: "SRT 字幕转 ASS 字幕",
                                                     "persistent-hint": "",
-                                                    color: "primary",
+                                                    color: "warning",
                                                     density: "compact",
-                                                    inset: "",
                                                     disabled: !config.mediawarp_enabled || loading.value
                                                   }, null, 8, ["modelValue", "disabled"])
                                                 ]),
@@ -3184,6 +3174,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-81d2f0c3"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-97d6e856"]]);
 
 export { Config as default };

@@ -540,7 +540,7 @@ class P1115StrmHelper(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png"
     # 插件版本
-    plugin_version = "100000.1.1"
+    plugin_version = "800000.8.8"
     # 插件作者
     plugin_author = "VUE测试版"
     # 作者主页
@@ -938,7 +938,11 @@ class P1115StrmHelper(_PluginBase):
             self.__mediawarp_logs_dir_path.mkdir(parents=True, exist_ok=True)
 
             logger.info(f"[MediaWarp] 正在下载: {url}")
-            response = requests.get(url, stream=True, timeout=300)
+            if settings.PROXY:
+                logger.info(f"[MediaWarp] 使用代理进行下载: {settings.PROXY}")
+            else:
+                logger.info("[MediaWarp] 未使用代理进行下载。")
+            response = requests.get(url, stream=True, timeout=300, proxies=settings.PROXY)
             response.raise_for_status()
 
             with open(temp_file, "wb") as f:
