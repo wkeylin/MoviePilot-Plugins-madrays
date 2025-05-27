@@ -23,7 +23,7 @@ class FengchaoSignin(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/fengchao.png"
     # 插件版本
-    plugin_version = "1.0.8"
+    plugin_version = "1.0.9"
     # 插件作者
     plugin_author = "madrays"
     # 作者主页
@@ -2344,7 +2344,7 @@ class FengchaoSignin(_PluginBase):
         使用Postman方式登录（先获取CSRF和cookie，再登录）
         """
         try:
-            req = RequestUtils(proxies=proxies, timeout=30)
+            req = RequestUtils(proxies=proxies, timeout=100)
             proxy_info = "代理" if proxies else "直接连接"
             logger.info(f"使用Postman方式登录 (使用{proxy_info})...")
             
