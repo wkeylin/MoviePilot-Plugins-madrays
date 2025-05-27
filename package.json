@@ -151,6 +151,19 @@
     "history": {
       "v100000.1.1": "集成MediaWarp"
     }
+  },
+  "PluginManagerVue": {
+    "name": "插件管理器VUE",
+    "description": "集成插件热重载、彻底卸载等功能，支持本地和在线插件管理。",
+    "labels": "插件,管理,工具",
+    "version": "1.0",
+    "icon": "https://raw.githubusercontent.com/madrays/MoviePilot-Plugins/main/icons/manager.png",
+    "author": "madrays",
+    "level": 1,
+    "v2": true,
+    "history": {
+      "v1.0": "首次发布"
+    }
   }
 
 } 
